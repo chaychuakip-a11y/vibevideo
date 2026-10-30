@@ -1,0 +1,455 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700;900&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>html,body{margin:0;background:#0F1014}canvas{display:block}</style>
+</head><body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// 手机为什么 20% 就关机 · 完整版（约 2 分 38 秒）· Dark Math 风格
+const W = 1920, H = 1080, END = 158;
+const C = { bg: "#0F1014", blue: "#58C4DD", yellow: "#F4D35E", red: "#FC6255", white: "#ECECEC", dim: "#6B7280", note: "#9AA3B2", green: "#83C167", ice: "#BFE6F2", panel: "#171A21" };
+const SERIF = '"Noto Serif SC", serif', SANS = '"Noto Sans SC", "WenQuanYi Zen Hei", sans-serif';
+const ctx = document.getElementById("c").getContext("2d");
+
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const ease = p => { p = clamp(p); return p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const ramp = (t, a, b) => ease((t - a) / (b - a));
+const fade = (t, a, b, d = 0.35) => clamp(Math.min((t - a) / d, (b - t) / d));
+const line = (a, b) => { ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke(); };
+// 可复现的平滑噪声
+const noise = t => Math.sin(t * 7.3) * .5 + Math.sin(t * 13.1 + 1) * .3 + Math.sin(t * 29.7 + 2) * .2;
+let T = 0;
+
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function text(str, x, y, size, col, alpha, font = SERIF, weight = 700, spacing = 6, align = "center") {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = col;
+  ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = "middle";
+  ctx.letterSpacing = spacing + "px";
+  ctx.fillText(str, x, y + (1 - Math.min(1, alpha)) * 12);
+  ctx.restore();
+}
+
+// ───────── 主道具：水箱（水位 = 估计电量）
+// o.opaque 不透明（看不见水位）；o.ice 结冰程度；o.pipe 出水管粗细（= 1/内阻）；o.rust 老化锈迹
+function tank(x, y, w, h, level, alpha, o = {}) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  const wl = y + h - h * level;
+  // 水
+  ctx.save(); rr(x, y, w, h, 18); ctx.clip();
+  const ice = o.ice || 0;
+  ctx.fillStyle = ice > 0 ? `rgba(${lerp(88, 191, ice)},${lerp(196, 230, ice)},${lerp(221, 242, ice)},.85)` : "rgba(88,196,221,.85)";
+  ctx.beginPath(); ctx.moveTo(x, y + h);
+  for (let i = 0; i <= 40; i++) { const px = x + w * i / 40; ctx.lineTo(px, wl + Math.sin(i * .5 + T * 3) * 5 * (1 - ice)); }
+  ctx.lineTo(x + w, y + h); ctx.fill();
+  if (ice > 0) { // 冰晶
+    ctx.strokeStyle = `rgba(255,255,255,${.5 * ice})`; ctx.lineWidth = 2;
+    for (let k = 0; k < 9; k++) { const cx = x + 30 + (k * 73) % (w - 60), cy = y + h - 20 - (k * 47) % Math.max(10, h * level - 30);
+      for (let r = 0; r < 3; r++) { const a = r * Math.PI / 3; line([cx - Math.cos(a) * 10, cy - Math.sin(a) * 10], [cx + Math.cos(a) * 10, cy + Math.sin(a) * 10]); } }
+  }
+  if (o.opaque) { ctx.fillStyle = `rgba(40,44,54,${o.opaque})`; ctx.fillRect(x, y, w, h); }
+  ctx.restore();
+  // 箱体
+  ctx.strokeStyle = C.white; ctx.lineWidth = 6; rr(x, y, w, h, 18); ctx.stroke();
+  if (o.opaque > .5) text("?", x + w / 2, y + h / 2, 140, C.note, o.opaque, SERIF, 900, 0);
+  // 出水管
+  if (o.pipe !== undefined) {
+    const pw = 8 + o.pipe * 30, py = y + h - 40;
+    ctx.fillStyle = o.rust ? "#8A5A3C" : C.white; ctx.globalAlpha *= .9;
+    ctx.fillRect(x + w, py - pw / 2, 110, pw);
+    if (o.rust) { ctx.fillStyle = "#B4734A"; for (let k = 0; k < 6; k++) ctx.fillRect(x + w + 10 + k * 17, py - pw / 2 - 3, 8, 4); }
+  }
+  ctx.restore();
+}
+function pctLabel(x, y, v, alpha, col = C.white, size = 64) { text(`${Math.round(v)}%`, x, y, size, col, alpha, SANS, 700, 1); }
+
+// ───────── 手机
+function phone(x, y, s, pct, alpha, off = 0) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.scale(s, s);
+  rr(-160, -320, 320, 640, 44); ctx.fillStyle = "#0B0C10"; ctx.fill();
+  ctx.strokeStyle = C.white; ctx.lineWidth = 6; ctx.stroke();
+  // 屏幕
+  rr(-140, -298, 280, 596, 30); ctx.fillStyle = "#1A1E28"; ctx.fill();
+  ctx.save(); ctx.globalAlpha *= 1 - off;
+  const col = pct <= 20 ? C.red : C.white;
+  ctx.strokeStyle = col; ctx.lineWidth = 3; rr(70, -270, 44, 20, 5); ctx.stroke();
+  ctx.fillStyle = col; ctx.fillRect(116, -264, 4, 8); ctx.fillRect(74, -266, 36 * pct / 100, 12);
+  text(`${Math.round(pct)}%`, 0, -40, 96, col, 1, SANS, 700, 1);
+  text("剩余电量", 0, 40, 30, C.note, 1, SANS, 400, 4);
+  ctx.restore();
+  if (off > 0) { // 关机：屏幕收成一条线后熄灭
+    const k = clamp(off * 3), lineH = lerp(596, 2, k);
+    ctx.fillStyle = "#000"; rr(-140, -298, 280, 596, 30); ctx.globalAlpha *= clamp(off * 2); ctx.fill();
+    if (off < .6) { ctx.globalAlpha = alpha * (1 - off / .6); ctx.fillStyle = C.white; ctx.fillRect(-140 * (1 - k * .8), -lineH / 2, 280 * (1 - k * .8), lineH); }
+  }
+  ctx.restore();
+}
+
+// ───────── 电压曲线（随时间滚动）：vf(t) 返回 0..1，thr 关机线
+function scope(x, y, w, h, t, vf, alpha, thr = .22, win = 6, tStop = 1e9) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  ctx.fillStyle = C.panel; rr(x, y, w, h, 14); ctx.fill();
+  ctx.strokeStyle = "rgba(236,236,236,.12)"; ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) line([x, y + h * i / 4], [x + w, y + h * i / 4]);
+  // 关机线
+  const ty = y + h - h * thr;
+  ctx.save(); ctx.setLineDash([16, 10]); ctx.strokeStyle = C.red; ctx.lineWidth = 4; line([x, ty], [x + w, ty]); ctx.restore();
+  text("关机线", x + w - 16, ty + 28, 28, C.red, 1, SANS, 700, 3, "right");
+  text("电压", x + 18, y + 30, 28, C.yellow, 1, SANS, 700, 3, "left");
+  // 曲线
+  const tEnd = Math.min(t, tStop);
+  ctx.lineWidth = 5; ctx.lineJoin = "round";
+  let prev = null;
+  for (let i = 0; i <= 160; i++) {
+    const tt = t - win + win * i / 160; if (tt > tEnd) break;
+    const v = vf(tt), px = x + w * i / 160, py = y + h - h * clamp(v, -.05, 1.05);
+    if (prev) { ctx.strokeStyle = v < thr ? C.red : C.yellow; line(prev, [px, py]); }
+    prev = [px, py];
+  }
+  if (prev) { ctx.fillStyle = vf(tEnd) < thr ? C.red : C.yellow; ctx.beginPath(); ctx.arc(prev[0], prev[1], 9, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+
+function snowflake(x, y, r, alpha) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.strokeStyle = C.ice; ctx.lineWidth = 5; ctx.lineCap = "round";
+  ctx.translate(x, y); ctx.rotate(T * .4);
+  for (let i = 0; i < 6; i++) { ctx.rotate(Math.PI / 3); line([0, 0], [0, -r]); line([0, -r * .6], [r * .22, -r * .82]); line([0, -r * .6], [-r * .22, -r * .82]); }
+  ctx.restore();
+}
+function sun(x, y, r, alpha) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.strokeStyle = C.yellow; ctx.fillStyle = C.yellow; ctx.lineWidth = 5; ctx.lineCap = "round";
+  ctx.translate(x, y); ctx.beginPath(); ctx.arc(0, 0, r * .45, 0, 7); ctx.fill(); ctx.rotate(T * .3);
+  for (let i = 0; i < 8; i++) { ctx.rotate(Math.PI / 4); line([0, -r * .65], [0, -r]); }
+  ctx.restore();
+}
+function chip(x, y, s, alpha, label = "电量计") {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.scale(s, s);
+  ctx.strokeStyle = C.note; ctx.lineWidth = 5;
+  for (let i = -2; i <= 2; i++) { line([i * 26, -80], [i * 26, -100]); line([i * 26, 80], [i * 26, 100]); line([-80, i * 26], [-100, i * 26]); line([80, i * 26], [100, i * 26]); }
+  rr(-80, -80, 160, 160, 12); ctx.fillStyle = C.panel; ctx.fill(); ctx.strokeStyle = C.white; ctx.stroke();
+  text(label, 0, 0, 34, C.white, 1, SANS, 700, 2);
+  ctx.restore();
+}
+
+// ───────── 关键词 / 字幕 / 出处
+const KEYS = [
+  [0.4, 6.4, "明明还有 20%", 0, C.white],
+  [6.6, 11.0, "怎么就关机了？", 0, C.red],
+  [15.0, 19.0, "把电池当成水箱", 0, C.white],
+  [19.0, 27.6, "水箱是不透明的", 0, C.white],
+  [27.8, 33.0, "只能间接推算", 0, C.white],
+  [33.4, 41.0, "线索一：电压", 0, C.white],
+  [41.0, 55.0, "中间几乎是平的", 0, C.white], [45.6, 55.0, "差一点 错一片", 1, C.yellow],
+  [55.4, 63.6, "线索二：数电流", 0, C.white],
+  [63.6, 75.0, "误差会越积越多", 0, C.white], [68.0, 75.0, "电压 + 电流 + 温度", 1, C.yellow],
+  [75.4, 85.0, "记住电池的体质", 0, C.white],
+  [85.0, 92.0, "说到底是估计", 0, C.yellow],
+  [92.2, 103.0, "真正的元凶：电压骤降", 0, C.white],
+  [103.2, 113.0, "冬天：内阻变大", 0, C.ice],
+  [109.8, 113.0, "水还在", 1, C.yellow],
+  [113.2, 124.0, "旧电池：内阻也变大", 0, C.white],
+  [124.2, 134.0, "冷关机 多半是暂时的", 0, C.white],
+  [134.2, 150.0, "三个实用建议", 0, C.white],
+  [150.2, 158.0, "20% 只是一个猜测", 0, C.yellow],
+];
+const SUBS = [
+  [0.2, 3.0, "你一定遇到过："], [3.0, 6.4, "屏幕上明明还显示 20%，"], [6.4, 8.6, "下一秒，直接黑屏关机"],
+  [8.6, 11.2, "难道电量显示在骗你？"], [11.2, 14.8, "其实，手机的电量百分比，本来就是“猜”出来的"],
+  [15.2, 19.0, "把电池想象成一个水箱，电量就是里面的水位"],
+  [19.0, 23.0, "麻烦在于：这个水箱是不透明的"],
+  [23.0, 27.6, "没有任何仪表能直接看到里面还剩多少电"],
+  [27.6, 33.0, "手机里有一颗“电量计”芯片，只能从外面间接推算"],
+  [33.4, 37.0, "第一个线索：电压"],
+  [37.0, 41.0, "水越满，水压越高；电越满，电压越高"],
+  [41.0, 45.6, "可锂电池有个麻烦：中间一大段，电压几乎是平的"],
+  [45.6, 50.2, "电压只差一点点，算出来的电量可能差很多"],
+  [50.2, 55.0, "而且一用电，电压就会往下掉，读数本身也在晃"],
+  [55.4, 59.0, "第二个线索：数电流"],
+  [59.0, 63.6, "像水表一样，把流进、流出的电一点点累加"],
+  [63.6, 68.0, "短时间很准，但每一次的小误差会越积越多"],
+  [68.0, 75.0, "所以电量计要让两条线索互相校正，还要考虑温度"],
+  [75.4, 80.0, "更聪明的电量计，还会记住这块电池的“体质”"],
+  [80.0, 85.0, "比如它现在最多能装多少电、内阻有多大，随老化不断更新"],
+  [85.0, 92.0, "但说到底，屏幕上的那个数字，仍然是一个估计值"],
+  [92.2, 97.0, "真正让手机突然关机的，是这条线：电压一旦跌破“关机线”"],
+  [97.0, 100.4, "手机就会立刻关机，保护里面的电子元件"],
+  [100.4, 103.0, "平时打开相机、玩游戏，电流一大，电压会往下一沉"],
+  [103.2, 107.2, "可到了冬天，电池里的化学反应变慢，内阻变大"],
+  [107.2, 109.8, "同样一下电流，电压直接砸穿关机线"],
+  [109.8, 113.0, "可水箱里，其实还有 20% 的水——只是一下子放不出来"],
+  [113.2, 117.6, "用了几年的旧电池也一样：老化会让内阻变大"],
+  [117.6, 120.4, "所以旧手机更容易“20% 就关机”"],
+  [120.4, 124.0, "苹果的说明也是：电量低、电池老化、天冷，都更容易意外关机"],
+  [124.2, 128.6, "好消息是：冷出来的关机，大多是暂时的"],
+  [128.6, 134.0, "手机回暖之后再开机，电量往往又“回来”了一些"],
+  [134.2, 137.6, "所以，三个实用建议："],
+  [137.6, 141.4, "一，冬天把手机放在贴身口袋，别让它冻着"],
+  [141.4, 145.2, "二，电量低的时候，少开相机、游戏这类耗电大户"],
+  [145.2, 150.0, "三，旧手机经常低电量关机，看看电池健康，必要时换电池"],
+  [150.2, 154.0, "下次再看到 20%，记住：它只是一个猜测"],
+  [154.0, 157.6, "你的手机最低在多少 % 关过机？评论区说说"],
+];
+const NOTES = [
+  [27.8, 33.0, "电量计芯片示例：TI bq27441-G1 数据手册（电压、电流、温度综合推算）"],
+  [41.0, 55.0, "锂电池开路电压平台区：Weng et al. 2014, Journal of Power Sources · 曲线为示意"],
+  [59.0, 75.0, "库仑计数 + 电压校正：TI Impedance Track 电量计数据手册"],
+  [80.0, 92.0, "TI bq27441-G1：自动适应老化、自放电、温度和放电速率"],
+  [92.2, 103.0, "Apple：iPhone 在低电压时设计为自动关机，以保护电子元件 · 电压曲线为示意"],
+  [103.2, 113.0, "低温下内阻（尤其极化内阻）增大、电压更快到达截止电压：MCEI 2017 低温锂电池实验"],
+  [113.2, 124.0, "Apple 支持文档「iPhone 电池与性能」：低电量、化学老化、低温更易发生意外关机"],
+  [124.2, 134.0, "Apple：回到较高环境温度后，电池续航会恢复正常 · 数字为示意"],
+  [137.6, 141.4, "Apple 建议 iPhone 在 0–35 °C 环境中使用"],
+  [145.2, 150.0, "iPhone：设置 → 电池 → 电池健康（最大容量、峰值性能容量）"],
+];
+
+// ───────── 场景
+const S = [];
+// 1 冷开场：手机显示 20% → 黑屏 → 片名
+S.push([0, 11.4, (t, a) => {
+  const z = lerp(1.0, 1.08, ramp(t, 0, 11));
+  ctx.save(); ctx.translate(W / 2, 560); ctx.scale(z, z); ctx.translate(-W / 2, -560);
+  const pct = lerp(23, 20, ramp(t, 1.2, 4.5));
+  phone(W / 2, 580, .82, pct, a, ramp(t, 7.0, 7.6) > 0 ? clamp((t - 7.0) / .6) : 0);
+  ctx.restore();
+}]);
+S.push([11.2, 15.0, (t, a) => {
+  text("手机电量，其实是猜的", W / 2, 470, 104, C.white, a * fade(t, 11.4, 15, .5));
+  text("Why does your phone shut down when it still shows 20%?", W / 2, 590, 32, C.note, a * fade(t, 12.0, 15, .5), SANS, 400, 1);
+  ctx.save(); ctx.globalAlpha = a * .6; ctx.strokeStyle = C.yellow; ctx.lineWidth = 3;
+  const w = 760 * ramp(t, 11.6, 12.6); line([W / 2 - w / 2, 540], [W / 2 + w / 2, 540]); ctx.restore();
+}]);
+// 2 水箱：不透明 → 电量计芯片
+S.push([15.0, 33.2, (t, a) => {
+  const tx = lerp(W / 2 - 150, W / 2 - 420, ramp(t, 27.6, 28.6));
+  const opq = ramp(t, 19.2, 20.4);
+  tank(tx, 330, 300, 440, .62, a, { opaque: opq });
+  pctLabel(tx + 150, 300 - 10, 62, a * (1 - opq), C.blue, 48);
+  text("电池", tx + 150, 820, 34, C.white, a, SANS, 500, 6);
+  // 仪表试图看进去：一根探针反复碰壁
+  if (t > 23 && t < 27.6) { const p = (t - 23) % 1.2 / 1.2;
+    ctx.save(); ctx.globalAlpha = a * fade(t, 23, 27.6); ctx.strokeStyle = C.note; ctx.lineWidth = 4;
+    line([tx + 520 - p * 60, 540], [tx + 330 + (1 - p) * 40, 540]); ctx.restore();
+    text("✕", tx + 330, 500, 40, C.red, a * fade(t, 23.4, 27.6) * (p > .7 ? 1 : .3), SANS, 700, 0); }
+  // 电量计芯片：从外面接线推算
+  const ca = a * fade(t, 27.8, 99, .5);
+  chip(W / 2 + 260, 550, 1, ca);
+  if (ca > 0) { ctx.save(); ctx.globalAlpha = ca; ctx.strokeStyle = C.yellow; ctx.lineWidth = 3; ctx.setLineDash([10, 8]); ctx.lineDashOffset = -T * 40;
+    line([tx + 300, 450], [W / 2 + 150, 520]); line([tx + 300, 700], [W / 2 + 150, 580]); ctx.restore();
+    text("→  估计 62%?", W / 2 + 390, 550, 40, C.yellow, ca * fade(t, 29.5, 99), SANS, 700, 2, "left"); }
+}]);
+// 3 线索一：电压 → 平台区
+S.push([33.2, 55.2, (t, a) => {
+  // 前半：水位越高、水压越高
+  const p1 = a * fade(t, 33.2, 41.2, .5);
+  if (p1 > 0) {
+    const lv = .25 + .6 * (.5 + .5 * Math.sin((t - 33) * 1.2));
+    tank(W / 2 - 420, 330, 300, 440, lv, p1, { pipe: .6 });
+    const vh = 90 + 260 * lv;
+    ctx.save(); ctx.globalAlpha = p1; ctx.fillStyle = C.yellow; ctx.fillRect(W / 2 + 200, 770 - vh, 70, vh); ctx.restore();
+    text("电压", W / 2 + 235, 820, 34, C.yellow, p1, SANS, 700, 4);
+    text("电量", W / 2 - 270, 820, 34, C.blue, p1, SANS, 700, 4);
+  }
+  // 后半：开路电压曲线
+  const p2 = a * fade(t, 41.0, 99, .5);
+  if (p2 > 0) {
+    const gx = 520, gy = 760, gw = 880, gh = 420;
+    ctx.save(); ctx.globalAlpha = p2; ctx.strokeStyle = C.note; ctx.lineWidth = 3;
+    line([gx, gy], [gx + gw, gy]); line([gx, gy], [gx, gy - gh]); ctx.restore();
+    text("电量 →", gx + gw, gy + 40, 28, C.note, p2, SANS, 500, 2, "right");
+    text("电压", gx - 20, gy - gh, 28, C.yellow, p2, SANS, 700, 2, "right");
+    // 示意曲线：两头陡、中间平
+    const v = s => .08 + .32 * (1 - Math.exp(-s * 18)) + .3 * s + .3 * Math.pow(s, 8);
+    const draw = ramp(t, 41.2, 43.2);
+    // 平台区底色
+    ctx.save(); ctx.globalAlpha = p2 * .14 * ramp(t, 43, 44); ctx.fillStyle = C.yellow;
+    ctx.fillRect(gx + gw * .2, gy - gh, gw * .6, gh); ctx.restore();
+    text("平台区", gx + gw * .5, gy - gh + 30, 28, C.yellow, p2 * ramp(t, 43, 44), SANS, 700, 4);
+    ctx.save(); ctx.globalAlpha = p2; ctx.strokeStyle = C.yellow; ctx.lineWidth = 6; ctx.beginPath();
+    for (let i = 0; i <= 200 * draw; i++) { const s = i / 200; const px = gx + gw * s, py = gy - gh * v(s); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+    ctx.stroke(); ctx.restore();
+    // 电压差一点 → 电量差很多
+    const q = ramp(t, 45.8, 47.0);
+    if (q > 0) {
+      const s1 = .35, s2 = .62, y1 = gy - gh * v(s1), y2 = gy - gh * v(s2);
+      ctx.save(); ctx.globalAlpha = p2 * q; ctx.strokeStyle = C.white; ctx.lineWidth = 2; ctx.setLineDash([8, 8]);
+      line([gx, y1], [gx + gw * s1, y1]); line([gx, y2], [gx + gw * s2, y2]);
+      line([gx + gw * s1, y1], [gx + gw * s1, gy]); line([gx + gw * s2, y2], [gx + gw * s2, gy]); ctx.restore();
+      ctx.save(); ctx.globalAlpha = p2 * q; ctx.fillStyle = C.red; ctx.fillRect(gx + gw * s1, gy - 14, gw * (s2 - s1), 14); ctx.restore();
+      text("差一点", gx - 20, (y1 + y2) / 2, 26, C.white, p2 * q, SANS, 500, 2, "right");
+      text("差很多", gx + gw * (s1 + s2) / 2, gy + 40, 30, C.red, p2 * q, SANS, 700, 3);
+    }
+    // 一用电电压就晃：曲线上的点抖动
+    if (t > 50.2) { const s = .5, px = gx + gw * s, py = gy - gh * v(s) + 26 * Math.max(0, noise(t * .7)) * fade(t, 50.2, 55);
+      ctx.save(); ctx.globalAlpha = p2; ctx.fillStyle = C.white; ctx.beginPath(); ctx.arc(px, py, 12, 0, 7); ctx.fill(); ctx.restore(); }
+  }
+}]);
+// 4 线索二：数电流（库仑计数）→ 误差累积 → 校正
+S.push([55.2, 75.2, (t, a) => {
+  const tx = W / 2 - 520, ty = 330, tw = 300, th = 440;
+  const truth = lerp(.8, .45, ramp(t, 56, 74));
+  // 估计值：从 63.6 秒开始漂移，71 秒被电压校正拉回
+  const drift = .14 * ramp(t, 63.8, 68.5) * (1 - ramp(t, 70.6, 71.6));
+  const est = truth + drift;
+  tank(tx, ty, tw, th, truth, a, { pipe: .5 });
+  // 流出的水滴
+  for (let k = 0; k < 10; k++) { const p = ((t * .9 + k / 10) % 1);
+    ctx.save(); ctx.globalAlpha = a * (1 - p); ctx.fillStyle = C.blue; ctx.beginPath(); ctx.arc(tx + tw + 30 + p * 320, ty + th - 40 + p * p * 120, 7, 0, 7); ctx.fill(); ctx.restore(); }
+  // 估计水位（虚线）
+  const ey = ty + th - th * est;
+  ctx.save(); ctx.globalAlpha = a * fade(t, 59.2, 99); ctx.strokeStyle = C.yellow; ctx.lineWidth = 4; ctx.setLineDash([14, 10]);
+  line([tx - 40, ey], [tx + tw + 40, ey]); ctx.restore();
+  text("估计", tx - 50, ey, 28, C.yellow, a * fade(t, 59.2, 99), SANS, 700, 2, "right");
+  text("真实", tx - 50, ty + th - th * truth + 4, 28, C.blue, a * fade(t, 64.5, 99) * clamp(drift * 12), SANS, 700, 2, "right");
+  // 水表
+  const mx = W / 2 + 330, my = 470;
+  ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = C.panel; rr(mx - 260, my - 110, 520, 220, 18); ctx.fill();
+  ctx.strokeStyle = C.note; ctx.lineWidth = 3; ctx.stroke(); ctx.restore();
+  text("流出电量（库仑计）", mx, my - 60, 28, C.note, a, SANS, 500, 2);
+  const mah = Math.round(lerp(0, 1240, ramp(t, 56, 74)));
+  text(`${mah} mAh`, mx, my + 20, 72, C.white, a, SANS, 700, 2);
+  // 两条线索 + 温度 → 校正
+  const ca = a * fade(t, 68.2, 99, .4);
+  if (ca > 0) {
+    ["电压", "电流", "温度"].forEach((s, i) => {
+      const bx = mx - 210 + i * 210, by = my + 230;
+      ctx.save(); ctx.globalAlpha = ca * fade(t, 68.4 + i * .4, 99, .3); ctx.strokeStyle = [C.yellow, C.blue, C.red][i]; ctx.lineWidth = 3;
+      rr(bx - 80, by - 34, 160, 68, 34); ctx.stroke(); ctx.restore();
+      text(s, bx, by, 32, [C.yellow, C.blue, C.red][i], ca * fade(t, 68.4 + i * .4, 99, .3), SANS, 700, 4);
+    });
+    text("互相校正 ✓", mx, my + 330, 34, C.green, ca * fade(t, 71.2, 99, .3), SANS, 700, 4);
+  }
+}]);
+// 5 电池档案：容量 / 内阻随老化更新 → 仍是估计
+S.push([75.2, 92.2, (t, a) => {
+  chip(W / 2, 520, 1.15, a);
+  const ins = [["电压", C.yellow, -300, -120], ["电流", C.blue, -300, 0], ["温度", C.red, -300, 120]];
+  ins.forEach(([s, col, dx, dy], i) => {
+    const al = a * fade(t, 75.6 + i * .3, 99, .3);
+    ctx.save(); ctx.globalAlpha = al; ctx.strokeStyle = col; ctx.lineWidth = 3; line([W / 2 + dx + 70, 520 + dy], [W / 2 - 120, 520 + dy * .4]); ctx.restore();
+    text(s, W / 2 + dx, 520 + dy, 34, col, al, SANS, 700, 4, "right");
+  });
+  // 电池档案卡
+  const fa = a * fade(t, 77.0, 99, .4);
+  if (fa > 0) {
+    const fx = W / 2 + 300, fy = 360;
+    ctx.save(); ctx.globalAlpha = fa; ctx.fillStyle = C.panel; rr(fx, fy, 420, 240, 16); ctx.fill(); ctx.strokeStyle = C.note; ctx.lineWidth = 3; ctx.stroke(); ctx.restore();
+    text("电池档案", fx + 30, fy + 40, 32, C.white, fa, SANS, 700, 4, "left");
+    const age = ramp(t, 80.4, 84.6);
+    text(`最大容量  ${Math.round(lerp(100, 86, age))}%`, fx + 30, fy + 110, 30, C.blue, fa, SANS, 500, 2, "left");
+    text(`内阻  ${age > .5 ? "↑ 变大" : "正常"}`, fx + 30, fy + 160, 30, age > .5 ? C.red : C.note, fa, SANS, 500, 2, "left");
+    text(`使用 ${Math.round(lerp(0, 2, age))} 年`, fx + 30, fy + 210, 26, C.note, fa, SANS, 400, 2, "left");
+    text("数字为示意", fx + 390, fy + 210, 22, C.dim, fa, SANS, 400, 1, "right");
+  }
+  // 输出：一个打着问号的数字
+  const oa = a * fade(t, 85.2, 99, .4);
+  text("≈ 20% ?", W / 2, 800, 72, C.yellow, oa, SANS, 700, 2);
+}]);
+// 6 核心：电压骤降 → 冬天黑屏 → 旧电池黑屏
+const LOADS = [[100.4, .16], [106.6, .62], [117.8, .58]];   // [开始秒, 幅度]
+function vCore(t) {
+  let v = .5 + .02 * noise(t);
+  for (const [s, amp] of LOADS) { const p = (t - s); if (p > 0 && p < 2.6) v -= amp * Math.sin(Math.PI * clamp(p / 2.6)) ** .7; }
+  return v;
+}
+const BLACK = [[107.45, 109.8], [118.6, 120.4]];   // 砸穿关机线后整屏黑掉
+S.push([92.0, 124.2, (t, a) => {
+  const cold = ramp(t, 103.4, 104.6) * (1 - ramp(t, 112.8, 113.6));
+  const aged = ramp(t, 113.6, 114.6);
+  const tx = 240, ty = 330, tw = 300, th = 440;
+  tank(tx, ty, tw, th, .2, a, { pipe: 1 - .75 * Math.max(cold, aged), ice: cold, rust: aged > .5 });
+  pctLabel(tx + tw / 2, ty - 40, 20, a, C.white, 52);
+  text("内阻", tx + tw + 55, ty + th + 2, 26, C.note, a, SANS, 500, 3);
+  snowflake(tx + tw / 2 - 110, ty - 40, 34, a * cold);
+  text("用了几年", tx + tw / 2, ty + th + 50, 32, "#B4734A", a * aged, SANS, 700, 3);
+  // 示波器：黑屏期间冻结在砸穿的那一刻
+  let stop = 1e9; for (const [b0] of BLACK) if (t >= b0 && t < b0 + 4) stop = b0;
+  scope(720, 320, 1000, 460, t, vCore, a, .22, 6, stop);
+  // 负载提示
+  for (const [s] of LOADS) text("打开相机 / 游戏", 1220, 290, 28, C.white, a * fade(t, s - .3, s + 2.4, .3), SANS, 500, 2);
+}]);
+// 7 回暖：重新开机，电量“回来”一些
+S.push([124.0, 134.2, (t, a) => {
+  const warm = ramp(t, 125, 127);
+  sun(W / 2 - 330, 360, 60, a * warm);
+  snowflake(W / 2 - 330, 360, 46, a * (1 - warm));
+  const on = ramp(t, 128.6, 129.4);
+  phone(W / 2 + 120, 560, .7, lerp(0, 14, ramp(t, 129.4, 131)), a, 1 - on);
+  text("开机", W / 2 + 120, 850, 30, C.note, a * (1 - on), SANS, 500, 4);
+}]);
+// 8 三个建议
+S.push([134.0, 150.2, (t, a) => {
+  const rows = [["1", "冬天贴身放，别让它冻着", 137.6, C.ice], ["2", "低电量时少开相机、游戏", 141.4, C.yellow], ["3", "常低电量关机：查电池健康", 145.2, C.red]];
+  rows.forEach(([n, s, t0, col], i) => {
+    const y = 380 + i * 150, al = a * fade(t, t0 - .2, 999, .35), x = W / 2 - 430;
+    ctx.save(); ctx.globalAlpha = al; ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y, 42, 0, 7); ctx.stroke(); ctx.restore();
+    text(n, x, y, 44, col, al, SANS, 700, 0);
+    text(s, x + 80, y, 52, C.white, al, SANS, 500, 3, "left");
+  });
+}]);
+// 9 结尾：20% 盖上“估计值”印章
+S.push([150.0, END + 1, (t, a) => {
+  phone(W / 2, 600, .72, 20, a);
+  const st = ramp(t, 151.0, 151.4);
+  if (st > 0) {
+    ctx.save(); ctx.globalAlpha = a * st; ctx.translate(W / 2, 700); ctx.rotate(-.12); ctx.scale(lerp(1.8, 1, st), lerp(1.8, 1, st));
+    ctx.strokeStyle = C.red; ctx.lineWidth = 6; rr(-150, -50, 300, 100, 10); ctx.stroke();
+    text("估计值", 0, 2, 60, C.red, 1, SERIF, 900, 10); ctx.restore();
+  }
+  text("收藏这条，冬天用得上", W / 2, 262, 52, C.white, a * fade(t, 153.2, 999), SERIF, 700, 4);
+}]);
+
+function draw(t) {
+  T = t;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  for (const [a, b, fn] of S) { const al = fade(t, a, b, .45); if (al > 0) { ctx.save(); fn(t, al); ctx.restore(); } }
+  // 黑屏：整个画面“跟着手机关机”
+  for (const [b0, b1] of BLACK) {
+    if (t < b0 || t > b1) continue;
+    const k = clamp((t - b0) / .12), out = clamp((b1 - t) / .4);
+    ctx.fillStyle = `rgba(0,0,0,${k * out})`; ctx.fillRect(0, 0, W, H);
+    if (t - b0 < .15) { ctx.fillStyle = "rgba(255,255,255,.7)"; ctx.fillRect(0, H / 2 - 2, W, 4); }
+    text("已关机", W / 2, H / 2, 40, C.dim, out * clamp((t - b0 - .5) / .3), SANS, 500, 10);
+  }
+  for (const [a, b, s, row, col] of KEYS) {
+    const al = fade(t, a, b, .35);
+    if (row === 0) text(s, W / 2, 150, 84, col, al); else text(s, W / 2, 258, 56, col, al);
+  }
+  for (const [a, b, s] of NOTES) {
+    const al = fade(t, a, b, .3) * .9; if (al <= 0) continue;
+    text("出处 · " + s, 70, 892, 25, C.note, al, SANS, 400, 0, "left");
+  }
+  for (const [a, b, s] of SUBS) {
+    const al = fade(t, a, b, .15); if (al <= 0) continue;
+    ctx.save(); ctx.globalAlpha = al; ctx.font = `500 42px ${SANS}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineWidth = 8; ctx.strokeStyle = "rgba(0,0,0,.75)"; ctx.strokeText(s, W / 2, 985);
+    ctx.fillStyle = C.white; ctx.fillText(s, W / 2, 985); ctx.restore();
+  }
+  const g = ctx.createRadialGradient(W / 2, H / 2, H * .35, W / 2, H / 2, H * .95);
+  g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,.6)");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(GR[Math.floor(t * 24) % GR.length], 0, 0, W, H);
+  const black = 1 - Math.min(clamp(t / .4), clamp((END - t) / .8));
+  if (black > 0) { ctx.fillStyle = `rgba(0,0,0,${black})`; ctx.fillRect(0, 0, W, H); }
+}
+const GR = [];
+for (let k = 0; k < 6; k++) {
+  const cv = document.createElement("canvas"); cv.width = 480; cv.height = 270;
+  const c2 = cv.getContext("2d"), im = c2.createImageData(480, 270);
+  for (let i = 0; i < im.data.length; i += 4) { const v = Math.random() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 14; }
+  c2.putImageData(im, 0, 0); GR.push(cv);
+}
+window.draw = draw; window.END = END;
+window.events = () => ({ loads: LOADS, black: BLACK });
+window.ready = document.fonts.ready.then(() => Promise.all([
+  document.fonts.load(`700 96px "Noto Serif SC"`, "电量"), document.fonts.load(`900 96px "Noto Serif SC"`, "电量"),
+  document.fonts.load(`500 42px "Noto Sans SC"`, "电量"), document.fonts.load(`700 42px "Noto Sans SC"`, "电量"), document.fonts.load(`400 42px "Noto Sans SC"`, "电量"),
+])).then(() => true);
+</script></body></html>

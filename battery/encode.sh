@@ -1,0 +1,2 @@
+cd "$(dirname "$0")"
+ffmpeg -loglevel error -y -framerate 60 -i frames/f%05d.jpg -i $HOME/.claude/skills/vibe-knowledge/assets/music/vibe-bgm.m4a -i sfx.wav -filter_complex "[1:a]atrim=0:158,asetpts=PTS-STARTPTS,afade=t=in:d=0.3,afade=t=out:st=155:d=3,volume=-3dB[m];[2:a]aformat=channel_layouts=stereo,volume=-4dB[s];[m][s]amix=inputs=2:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[a]" -map 0:v -map "[a]" -c:v libx264 -preset medium -crf 19 -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 192k -t 158 手机20%关机_完整版.mp4

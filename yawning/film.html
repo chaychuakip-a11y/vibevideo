@@ -1,0 +1,515 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700;900&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>html,body{margin:0;background:#0F1014}canvas{display:block}</style>
+</head><body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// 哈欠为什么会传染 · 完整版（约 2 分 34 秒）· Dark Math 风格
+const W = 1920, H = 1080, END = 154, GROUND = 760;
+const C = { bg: "#0F1014", blue: "#58C4DD", yellow: "#F4D35E", red: "#FC6255", white: "#ECECEC", dim: "#6B7280", note: "#9AA3B2", chimp: "#C9955F", green: "#83C167" };
+const SERIF = '"Noto Serif SC", serif', SANS = '"Noto Sans SC", "WenQuanYi Zen Hei", sans-serif';
+const ctx = document.getElementById("c").getContext("2d");
+
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const ease = p => { p = clamp(p); return p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const ramp = (t, a, b) => ease((t - a) / (b - a));
+const fade = (t, a, b, d = 0.35) => clamp(Math.min((t - a) / d, (b - t) / d));
+
+// ───────── 哈欠事件表：计数器、音效都读它（[开始秒, 时长, 强度]）
+const Y = {
+  hook: [[1.5, 1.3, 1], [7.6, 1.3, 1]],
+  anatomy: [[15.2, 4.6, 1]],
+  winter: [[26.6, 1.3, 1], [30.6, 1.3, 1]], summer: [[33.0, 1.3, .9]],
+  domino: [...[0, 1, 2, 3, 4, 5, 6].map(k => [37.0 + .5 * k, 1.3, 1]), ...[0, 1, 2, 3, 4, 5, 6].map(k => [42.6 + .4 * k, 1.3, 1])],
+  reader: [[53.6, 1.6, 1]],
+  np: [[62.6, 1.3, 1], [63.6, 1.3, 1], [64.4, 1.3, 1], [65.4, 1.3, 1], [67.0, 1.3, .45]],
+  chimps: [[76.0, 1.3, 1], [76.6, 1.3, 1], [77.0, 1.3, 1]],
+  dog: [[84.0, 1.3, 1], [85.2, 1.4, 1]],
+  kids: [[92.0, 1.3, 1], [93.4, 1.3, 1], [93.8, 1.3, 1]],
+  eyesTrig: [[100.6, 1.3, 1], [103.0, 1.3, 1]], eyes: [[104.2, 1.3, 1]],
+  final: [...[0, 1, 2, 3, 4, 5].map(k => [137.6 + .5 * k, 1.3, 1]), [147.6, 1.6, 1]],
+};
+const ALL = Object.values(Y).flat().map(e => e[0]).sort((a, b) => a - b);
+
+function yawnAmt(t, ev) {
+  if (!ev) return 0;
+  const [start, dur, k] = ev, p = (t - start) / dur;
+  if (p <= 0 || p >= 1) return 0;
+  const v = p < .35 ? ease(p / .35) : p < .72 ? 1 : 1 - ease((p - .72) / .28);
+  return v * k;
+}
+const anyYawn = (t, evs) => Math.max(0, ...evs.map(e => yawnAmt(t, e)));
+
+// ───────── 角色
+const line = (a, b) => { ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke(); };
+// 火柴人：脚底中心 (x,y)；o.point 指向镜头；o.cover 用手捂嘴；o.look 眼睛看向 (-1..1)；o.ears 黑猩猩
+function stick(x, y, s, amt, col, alpha = 1, o = {}) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  ctx.translate(x, y); ctx.scale(s, s);
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = o.lw || 9; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  const bob = Math.sin((o.phase || 0) + performanceT * 2.2) * 2;
+  const lean = -amt * 10;
+  const hip = [0, -95], neck = [lean * .4, -185 + bob], head = [lean, -228 - amt * 6 + bob];
+  line(hip, [-38, 0]); line(hip, [38, 0]); line(hip, neck);
+  const sh = [neck[0], -168 + bob], L = 88;
+  const armL = lerp(Math.PI * .62, Math.PI * 1.18, amt);
+  const armR = lerp(Math.PI * .38, -Math.PI * .18, amt);
+  line(sh, [sh[0] + Math.cos(armL) * L, sh[1] + Math.sin(armL) * L]);
+  if (o.point > 0) {
+    const a = lerp(Math.PI * .38, -Math.PI * .1, o.point), len = lerp(L, 34, o.point);
+    const hand = [sh[0] + Math.cos(a) * len, sh[1] + Math.sin(a) * len + o.point * 8];
+    line(sh, hand); ctx.beginPath(); ctx.arc(hand[0], hand[1], 8 + o.point * 12, 0, 7); ctx.fill();
+  } else if (o.cover > 0) {
+    // 手捂嘴：肘弯起，手停在嘴前
+    const mouth = [head[0], head[1] + 16];
+    const elbow = [sh[0] + 46, sh[1] + lerp(70, 20, o.cover)];
+    const hand = [lerp(sh[0] + 30, mouth[0] + 6, o.cover), lerp(sh[1] + 80, mouth[1], o.cover)];
+    line(sh, elbow); line(elbow, hand);
+  } else line(sh, [sh[0] + Math.cos(armR) * L, sh[1] + Math.sin(armR) * L]);
+  if (o.ears) { for (const ex of [-40, 40]) { ctx.beginPath(); ctx.arc(head[0] + ex, head[1] - 2, 13, 0, 7); ctx.stroke(); } }
+  ctx.beginPath(); ctx.arc(head[0], head[1], 38, 0, Math.PI * 2); ctx.stroke();
+  const lk = (o.look || 0) * 9;
+  for (const ex of [-13, 13]) {
+    if (amt > .45) line([head[0] + ex - 7, head[1] - 8], [head[0] + ex + 7, head[1] - 6]);
+    else { ctx.beginPath(); ctx.arc(head[0] + ex + lk, head[1] - 8, 4.5, 0, 7); ctx.fill(); }
+  }
+  const covered = o.cover > .8;
+  if (amt > .05 && !covered) {
+    ctx.save(); ctx.fillStyle = C.yellow; ctx.globalAlpha *= .9;
+    ctx.beginPath(); ctx.ellipse(head[0], head[1] + 14, 7 + amt * 6, 3 + amt * 17, 0, 0, 7); ctx.fill(); ctx.restore();
+  } else if (!covered) { ctx.lineWidth = 5; line([head[0] - 8, head[1] + 14], [head[0] + 8, head[1] + 14]); }
+  ctx.restore();
+}
+// 狗：四条腿，脚底中心 (x,y)，头朝左
+function dog(x, y, s, amt, col, alpha = 1) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.scale(s, s);
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 9; ctx.lineCap = "round";
+  const bob = Math.sin(performanceT * 2.6) * 2;
+  line([-70, -90 + bob], [70, -90 + bob]);
+  for (const lx of [-60, -35, 45, 70]) line([lx, -90 + bob], [lx - 4, 0]);
+  line([70, -90 + bob], [105, -125 + Math.sin(performanceT * 9) * 8]);  // 尾巴
+  const hx = -95, hy = -128 + bob - amt * 8;
+  line([-70, -90 + bob], [hx + 10, hy + 20]);
+  ctx.beginPath(); ctx.arc(hx, hy, 30, 0, 7); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(hx + 22, hy - 22, 9, 18, .5, 0, 7); ctx.fill();   // 耳朵
+  if (amt > .45) line([hx - 16, hy - 8], [hx - 4, hy - 6]);
+  else { ctx.beginPath(); ctx.arc(hx - 10, hy - 8, 4.5, 0, 7); ctx.fill(); }
+  if (amt > .05) { ctx.save(); ctx.fillStyle = C.yellow; ctx.beginPath(); ctx.ellipse(hx - 14, hy + 12, 6 + amt * 4, 3 + amt * 13, 0, 0, 7); ctx.fill(); ctx.restore(); }
+  else { ctx.lineWidth = 5; line([hx - 22, hy + 12], [hx - 8, hy + 12]); }
+  ctx.restore();
+}
+function heart(x, y, s, alpha) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.scale(s, s); ctx.fillStyle = C.yellow;
+  ctx.beginPath(); ctx.moveTo(0, 8); ctx.bezierCurveTo(-22, -8, -12, -26, 0, -14); ctx.bezierCurveTo(12, -26, 22, -8, 0, 8); ctx.fill();
+  ctx.restore();
+}
+function snowflake(x, y, r, alpha) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.strokeStyle = C.blue; ctx.lineWidth = 5; ctx.lineCap = "round";
+  ctx.translate(x, y); ctx.rotate(performanceT * .4);
+  for (let i = 0; i < 6; i++) { ctx.rotate(Math.PI / 3); line([0, 0], [0, -r]); line([0, -r * .6], [r * .22, -r * .82]); line([0, -r * .6], [-r * .22, -r * .82]); }
+  ctx.restore();
+}
+function sun(x, y, r, alpha) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.strokeStyle = C.red; ctx.fillStyle = C.red; ctx.lineWidth = 5; ctx.lineCap = "round";
+  ctx.translate(x, y); ctx.beginPath(); ctx.arc(0, 0, r * .45, 0, 7); ctx.fill(); ctx.rotate(performanceT * .3);
+  for (let i = 0; i < 8; i++) { ctx.rotate(Math.PI / 4); line([0, -r * .65], [0, -r]); }
+  ctx.restore();
+}
+function bar(x, base, w, h, col, alpha, label, val) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = col;
+  ctx.fillRect(x - w / 2, base - h, w, h);
+  ctx.restore();
+  if (val) text(val, x, base - h - 30, 34, col, alpha, SANS, 700, 2);
+  if (label) text(label, x, base + 36, 32, C.white, alpha, SANS, 500, 3);
+}
+
+// ───────── 文字
+function text(str, x, y, size, col, alpha, font = SERIF, weight = 700, spacing = 6, align = "center") {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha * (ctx.__a ?? 1); ctx.fillStyle = col;
+  ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = "middle";
+  ctx.letterSpacing = spacing + "px";
+  ctx.fillText(str, x, y + (1 - Math.min(1, alpha)) * 14);
+  ctx.restore();
+}
+// 关键词（≤8 字一组，同屏最多两组）：[入, 出, 字, 行(0 主 / 1 副), 颜色]
+const KEYS = [
+  [0.3, 5.0, "看完这条", 0, C.white], [0.9, 5.0, "你可能会打哈欠", 1, C.yellow],
+  [5.2, 9.0, "先别忍", 0, C.white], [6.0, 9.0, "越忍越想打", 1, C.yellow],
+  [14.4, 22.0, "一套固定动作", 0, C.white],
+  [22.4, 35.6, "给大脑降温？", 0, C.white], [33.6, 35.6, "仍是假说", 1, C.red],
+  [36.4, 47.8, "哈欠会传染", 0, C.white], [39.6, 47.8, "约一半人会跟着打", 1, C.yellow],
+  [48.4, 59.6, "读到也算", 0, C.white], [55.6, 59.6, "包括你现在", 1, C.yellow],
+  [60.4, 73.6, "越亲近 越容易传染", 0, C.white],
+  [74.2, 81.6, "黑猩猩也一样", 0, C.white], [77.6, 81.6, "同群多打约 50%", 1, C.yellow],
+  [82.2, 89.6, "狗会被主人传染", 0, C.white],
+  [90.4, 99.6, "4 岁左右才出现", 0, C.white],
+  [100.2, 107.6, "也许只是在不在看", 0, C.white],
+  [108.2, 117.6, "大脑运动区", 0, C.white], [112.6, 117.6, "能解释约一半差异", 1, C.yellow],
+  [118.2, 129.6, "是共情吗？", 0, C.white], [125.6, 129.6, "尚无定论", 1, C.red],
+  [137.0, 146.4, "下次留意", 0, C.white], [139.0, 146.4, "是谁先打的", 1, C.yellow],
+  [146.8, 149.8, "下一个", 0, C.white], [147.4, 149.8, "是你", 1, C.yellow],
+];
+// 中文字幕
+const SUBS = [
+  [0.2, 2.6, "先别划走——"], [2.6, 5.0, "看完这条视频，你可能会打哈欠"],
+  [5.0, 7.4, "想忍住？一项实验发现，"], [7.4, 9.6, "被要求忍住的人，打哈欠的冲动反而更强"],
+  [9.6, 14.2, "今天就聊聊：哈欠为什么会“传染”？"],
+  [14.3, 18.2, "哈欠是一套几乎固定的动作："], [18.2, 22.0, "张大嘴、深吸一口气、伸展身体，一旦开始很难半途停下"],
+  [22.2, 26.0, "为什么要打哈欠？有一种假说：给大脑降温"],
+  [26.0, 31.0, "研究者在亚利桑那州图森的街头给路人看哈欠图片"],
+  [31.0, 33.6, "冬天，将近一半的人打了哈欠；夏天，不到四分之一"],
+  [33.6, 35.8, "不过这还只是假说，学界没有共识"],
+  [36.2, 39.6, "但哈欠最神奇的地方，是它会传染"],
+  [39.6, 44.0, "实验里，大约一半的人看到别人打哈欠，自己也会跟着打"],
+  [44.0, 47.9, "一个接一个，像推倒的多米诺骨牌"],
+  [48.2, 52.2, "甚至不用看见——"], [52.2, 55.6, "光是读到、想到“哈欠”，也能让人打哈欠"],
+  [55.6, 59.7, "你现在读到的这几行字，就是一次小实验"],
+  [60.2, 64.0, "意大利研究者在餐厅、办公室、家里观察了一年"],
+  [64.0, 68.4, "记录了 109 个成年人：谁的哈欠，传染给了谁"],
+  [68.4, 71.4, "结果：亲人最容易传染，然后是朋友、熟人，陌生人最难"],
+  [71.4, 73.7, "而且亲人“回”哈欠的速度也更快"],
+  [74.0, 77.6, "黑猩猩也是这样——"], [77.6, 81.7, "看同群伙伴打哈欠的视频，比看陌生黑猩猩多打约 50%"],
+  [82.0, 85.6, "狗也会被人传染"], [85.6, 89.7, "而且主人打哈欠，比陌生人打哈欠更容易让它跟着打"],
+  [90.2, 94.4, "不过，人不是一出生就会被传染的"], [94.4, 99.7, "在一项儿童研究里，大约 4 岁之后，这种传染才明显出现"],
+  [100.0, 104.0, "自闭症儿童看别人打哈欠，跟着打的更少"], [104.0, 107.7, "但另一项实验让他们盯着对方的眼睛，差距就不见了"],
+  [108.0, 112.6, "诺丁汉大学用经颅磁刺激，测了 36 个人的大脑运动皮层"],
+  [112.6, 117.7, "运动皮层越“兴奋”的人越容易被传染，能解释大约一半的个体差异"],
+  [118.0, 121.4, "那么，哈欠传染到底是不是共情？"],
+  [121.4, 125.6, "杜克大学的研究发现：一个人容不容易被传染，非常稳定"],
+  [125.6, 129.7, "但它和共情的关系不大，年龄也只能解释约 8%"],
+  [130.0, 136.6, "2017 年的一篇综述总结：证据并不一致，现在下结论还太早"],
+  [137.0, 141.6, "所以下次你打哈欠的时候，"], [141.6, 146.5, "不妨留意一下：是谁先打的？是不是你在乎的人？"],
+  [146.8, 149.9, "……下一个，是你"],
+  [150.2, 153.8, "打了的，评论区说一声：我打了"],
+];
+// 出处脚注（没出处不上屏）
+const NOTES = [
+  [5.2, 9.6, "Brown et al. 2017, Current Biology（诺丁汉大学）"],
+  [14.6, 22.0, "Provine 1986, Ethology：哈欠是一种“刻板动作模式”"],
+  [26.0, 35.8, "Gallup & Eldakar 2011 · 图森 160 人，冬夏各 80 人 · 相关性观察，非因果证明"],
+  [39.6, 47.9, "约 50%：Provine 实验室研究（UMBC）· 不同实验设计下比例会有差异"],
+  [52.2, 59.7, "Provine 1986：读到、想到哈欠也会诱发哈欠"],
+  [60.4, 73.7, "Norscia & Palagi 2011, PLoS ONE · 柱高为示意，只表示论文中的高低顺序"],
+  [77.6, 81.7, "Campbell & de Waal 2011, PLoS ONE · 23 只黑猩猩"],
+  [82.2, 89.7, "Joly-Mascheroni et al. 2008（29 只狗中 21 只）· Romero et al. 2013, PLoS ONE"],
+  [94.4, 99.7, "Helt et al. 2010, Child Development"],
+  [100.2, 107.7, "Helt et al. 2010；Senju et al. 2009（注视眼睛）· 见 Massen & Gallup 2017 综述"],
+  [108.2, 117.7, "Brown et al. 2017, Current Biology · 36 人 · 相关性结果"],
+  [121.4, 129.7, "Bartholomew & Cirulli 2014, PLoS ONE（杜克大学）"],
+  [130.0, 136.6, "Massen & Gallup 2017, Neuroscience & Biobehavioral Reviews"],
+];
+
+// ───────── 场景
+let performanceT = 0;
+function cam(z, fx = W / 2, fy = 600) { ctx.translate(W / 2, fy); ctx.scale(z, z); ctx.translate(-fx, -fy); }
+function ground(alpha, z = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha * .9; ctx.strokeStyle = "rgba(236,236,236,.10)"; ctx.lineWidth = 2 / z;
+  line([-2000, GROUND + 4], [4000, GROUND + 4]); ctx.restore();
+}
+const SCENES = [
+  // 1 冷开场：一个人打哈欠 → 想忍住，还是没忍住 → 片名
+  [0, 9.8, (t, a) => {
+    ctx.save(); cam(lerp(1.9, 1.7, t / 9.8)); ground(a);
+    const cover = ramp(t, 5.4, 6.0) * (1 - ramp(t, 7.4, 7.7));
+    stick(W / 2, GROUND, 1, cover > .5 ? 0 : anyYawn(t, Y.hook), C.blue, a, { cover });
+    // 忍住时的“憋”：头上冒出小汗点
+    if (t > 6 && t < 7.5) { const p = (t - 6) % .5 / .5; ctx.fillStyle = C.blue; ctx.globalAlpha = a * (1 - p);
+      ctx.beginPath(); ctx.arc(W / 2 + 50, GROUND - 270 - p * 30, 6, 0, 7); ctx.fill(); }
+    ctx.restore();
+  }],
+  [9.6, 14.2, (t, a) => {
+    text("哈欠为什么会传染？", W / 2, 470, 112, C.white, a * fade(t, 9.8, 14.2, .5));
+    text("Watching this video might make you yawn", W / 2, 590, 34, C.note, a * fade(t, 10.4, 14.2, .5), SANS, 400, 2);
+    ctx.save(); ctx.globalAlpha = a * fade(t, 10.0, 14.2, .5) * .6; ctx.strokeStyle = C.yellow; ctx.lineWidth = 3;
+    const w = 700 * ramp(t, 10, 11); line([W / 2 - w / 2, 540], [W / 2 + w / 2, 540]); ctx.restore();
+  }],
+  // 2 哈欠是什么：慢动作分解
+  [14.2, 22.1, (t, a) => {
+    ctx.save(); cam(lerp(1.35, 1.45, ramp(t, 14.2, 22))); ground(a);
+    const amt = anyYawn(t, Y.anatomy);
+    stick(W / 2, GROUND, 1, amt, C.blue, a);
+    const lab = (s, x, y, tx, ty, t0) => {
+      const al = a * fade(t, t0, 21.8, .4); if (al <= 0) return;
+      ctx.save(); ctx.globalAlpha = al; ctx.strokeStyle = C.yellow; ctx.lineWidth = 2.5; line([x, y], [tx, ty]); ctx.restore();
+      text(s, tx + (tx > x ? 20 : -20), ty, 34, C.yellow, al, SANS, 500, 3, tx > x ? "left" : "right");
+    };
+    lab("张大嘴", W / 2 + 20, GROUND - 210, W / 2 + 190, GROUND - 300, 15.8);
+    lab("深吸气", W / 2 - 10, GROUND - 150, W / 2 - 190, GROUND - 210, 16.6);
+    lab("伸展身体", W / 2 + 70, GROUND - 230, W / 2 + 210, GROUND - 160, 17.4);
+    ctx.restore();
+  }],
+  // 3 大脑降温假说：冬 vs 夏
+  [22.0, 35.9, (t, a) => {
+    ctx.save(); cam(lerp(1, 1.04, ramp(t, 22, 35.9))); ground(a);
+    const lx = W / 2 - 400, rx = W / 2 + 400, ap = fade(t, 22.6, 999, .5);
+    stick(lx, GROUND, .9, anyYawn(t, Y.winter), C.blue, a * ap, { phase: 1 });
+    stick(rx, GROUND, .9, anyYawn(t, Y.summer), C.red, a * ap, { phase: 2 });
+    snowflake(lx, GROUND - 360, 42, a * ap); sun(rx, GROUND - 360, 48, a * ap);
+    text("冬天", lx, GROUND + 50, 34, C.blue, a * ap, SANS, 500, 4);
+    text("夏天", rx, GROUND + 50, 34, C.red, a * ap, SANS, 500, 4);
+    // 柱：冬近一半 / 夏不到 1/4（示意高度）
+    const bp = ramp(t, 31.0, 32.2), ba = a * fade(t, 30.8, 999, .3);
+    bar(lx + 190, GROUND, 60, 240 * bp, C.blue, ba, null, bp > .9 ? "近一半" : null);
+    bar(rx + 190, GROUND, 60, 115 * bp, C.red, ba, null, bp > .9 ? "不到 1/4" : null);
+    ctx.restore();
+  }],
+  // 4 多米诺：一整排人接连打哈欠（两轮）
+  [35.8, 48.0, (t, a) => {
+    const z = lerp(1.15, 1, ramp(t, 35.8, 38));
+    ctx.save(); cam(z); ground(a, z);
+    for (let i = 0; i < 7; i++) {
+      const x = W / 2 + (i - 3) * 210;
+      stick(x, GROUND, 1, Math.max(yawnAmt(t, Y.domino[i]), yawnAmt(t, Y.domino[7 + i])), C.blue, a * fade(t, 35.8 + i * .08, 999, .4), { phase: i });
+    }
+    ctx.restore();
+  }],
+  // 5 读到也算：一个人读书，书页上满是“哈欠”
+  [48.0, 59.8, (t, a) => {
+    ctx.save(); cam(lerp(1.2, 1.3, ramp(t, 48, 59.8)), W / 2, 620); ground(a);
+    const amt = anyYawn(t, Y.reader);
+    stick(W / 2 - 160, GROUND, 1, amt, C.blue, a, { look: 1 });
+    // 书
+    const bx = W / 2 + 20, by = GROUND - 330, ap = a * fade(t, 48.4, 999, .4);
+    ctx.save(); ctx.globalAlpha = ap; ctx.strokeStyle = C.white; ctx.lineWidth = 4;
+    ctx.strokeRect(bx, by, 300, 200); line([bx + 150, by], [bx + 150, by + 200]);
+    ctx.font = `500 26px ${SANS}`; ctx.textBaseline = "middle";
+    const words = "哈欠 哈欠 哈欠 哈欠 哈欠 哈欠 哈欠 哈欠 哈欠 哈欠".split(" ");
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 2; c++) {
+      const k = r * 2 + c, show = clamp((t - 49.2 - k * .35) / .3);
+      ctx.globalAlpha = ap * show; ctx.fillStyle = k % 3 === 1 ? C.yellow : C.note;
+      ctx.fillText(words[k], bx + 24 + c * 150, by + 30 + r * 36);
+    }
+    ctx.restore(); ctx.restore();
+  }],
+  // 6 越亲近越传染：亲人 > 朋友 > 熟人 > 陌生人
+  [60.0, 73.8, (t, a) => {
+    ctx.save(); cam(lerp(1, 1.03, ramp(t, 60, 73.8)));
+    const base = GROUND + 10;
+    ground(a);
+    stick(260, GROUND, .95, yawnAmt(t, Y.np[0]), C.yellow, a * fade(t, 60.4, 999, .4));
+    text("先打哈欠的人", 260, GROUND + 50, 28, C.yellow, a * fade(t, 60.6, 999, .4), SANS, 500, 3);
+    const G = [["亲人", C.blue, 1], ["朋友", C.blue, .8], ["熟人", C.blue, .58], ["陌生人", C.dim, .34]];
+    G.forEach(([name, col, h], i) => {
+      const x = 640 + i * 340, ap = a * fade(t, 61.2 + i * .25, 999, .4);
+      stick(x, GROUND, .9, yawnAmt(t, Y.np[i + 1]), col, ap, { phase: i });
+      text(name, x, GROUND + 50, 32, col, ap, SANS, 500, 4);
+      // 示意柱（只表示顺序）
+      const bp = ramp(t, 68.4 + i * .25, 69.4 + i * .25);
+      ctx.save(); ctx.globalAlpha = a * .85 * (bp > 0 ? 1 : 0); ctx.fillStyle = col;
+      ctx.fillRect(x + 80, GROUND - 260 * h * bp, 26, 260 * h * bp); ctx.restore();
+      if (i < 2) heart(x, GROUND - 330, 1.2 + .08 * Math.sin(t * 5 + i), a * fade(t, 69.0, 999, .3));
+    });
+    // 传染波纹：从先打哈欠的人向右扩散
+    const wp = (t - 62.8) / 4.5;
+    if (wp > 0 && wp < 1) { ctx.save(); ctx.globalAlpha = a * (1 - wp) * .5; ctx.strokeStyle = C.yellow; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(260, GROUND - 230, 60 + wp * 1400, -0.5, 0.5); ctx.stroke(); ctx.restore(); }
+    ctx.restore();
+  }],
+  // 7 黑猩猩：同群 vs 外群
+  [74.0, 81.8, (t, a) => {
+    ctx.save(); cam(lerp(1.05, 1.1, ramp(t, 74, 81.8))); ground(a);
+    const xs = [W / 2 - 520, W / 2 - 340, W / 2 - 160];
+    xs.forEach((x, i) => stick(x, GROUND, .85, yawnAmt(t, Y.chimps[i]), C.chimp, a, { ears: true, phase: i, lw: 11 }));
+    stick(W / 2 + 480, GROUND, .85, 0, C.dim, a, { ears: true, lw: 11, look: -1 });
+    text("同一群", W / 2 - 340, GROUND + 50, 32, C.chimp, a, SANS, 500, 4);
+    text("陌生黑猩猩", W / 2 + 480, GROUND + 50, 32, C.dim, a, SANS, 500, 4);
+    ctx.save(); ctx.globalAlpha = a * .5; ctx.setLineDash([12, 12]); ctx.strokeStyle = C.chimp; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(W / 2 - 340, GROUND - 130, 290, 200, 0, 0, 7); ctx.stroke(); ctx.restore();
+    ctx.restore();
+  }],
+  // 8 狗与主人
+  [82.0, 89.8, (t, a) => {
+    ctx.save(); cam(lerp(1.15, 1.22, ramp(t, 82, 89.8))); ground(a);
+    stick(W / 2 - 180, GROUND, 1, yawnAmt(t, Y.dog[0]), C.blue, a);
+    dog(W / 2 + 200, GROUND, 1.1, yawnAmt(t, Y.dog[1]), C.yellow, a);
+    text("主人", W / 2 - 180, GROUND + 50, 32, C.blue, a, SANS, 500, 4);
+    heart(W / 2 + 10, GROUND - 330, 1.3 + .08 * Math.sin(t * 5), a * fade(t, 85.6, 999, .3));
+    ctx.restore();
+  }],
+  // 9 小孩：大约 4 岁之后才会被传染
+  [90.0, 99.8, (t, a) => {
+    ctx.save(); cam(1 + .03 * ramp(t, 90, 99.8)); ground(a);
+    stick(330, GROUND, 1, yawnAmt(t, Y.kids[0]), C.yellow, a * fade(t, 90.4, 999, .4));
+    [1, 2, 3, 4, 5].forEach((age, i) => {
+      const x = 720 + i * 240, s = .5 + age * .07, ap = a * fade(t, 90.8 + i * .15, 999, .4);
+      const amt = age === 4 ? yawnAmt(t, Y.kids[1]) : age === 5 ? yawnAmt(t, Y.kids[2]) : 0;
+      stick(x, GROUND, s, amt, age >= 4 ? C.blue : C.dim, ap, { phase: i, lw: 12 });
+      text(age + " 岁", x, GROUND + 50, 32, age >= 4 ? C.blue : C.dim, ap, SANS, 500, 3);
+    });
+    ctx.restore();
+  }],
+  // 10 注意力：看向别处 vs 盯着眼睛
+  [100.0, 107.8, (t, a) => {
+    ctx.save(); cam(1.1 + .04 * ramp(t, 100, 107.8)); ground(a);
+    const yx = W / 2, look = ramp(t, 103.2, 103.8);
+    stick(yx - 420, GROUND, .95, anyYawn(t, Y.eyesTrig), C.yellow, a);
+    stick(yx + 120, GROUND, .95, yawnAmt(t, Y.eyes[0]), C.blue, a, { look: lerp(1, -1, look) });
+    // 视线
+    ctx.save(); ctx.globalAlpha = a * .7; ctx.setLineDash([10, 10]); ctx.strokeStyle = look > .5 ? C.yellow : C.dim; ctx.lineWidth = 3;
+    const from = [yx + 105, GROUND - 225], to = look > .5 ? [yx - 400, GROUND - 225] : [yx + 520, GROUND - 120];
+    line(from, to); ctx.restore();
+    text(look > .5 ? "盯着眼睛" : "看向别处", yx + 120, GROUND + 50, 32, look > .5 ? C.yellow : C.dim, a, SANS, 500, 4);
+    ctx.restore();
+  }],
+  // 11 大脑：运动皮层兴奋性
+  [108.0, 117.8, (t, a) => {
+    ctx.save(); cam(1 + .04 * ramp(t, 108, 117.8));
+    const hx = W / 2 - 260, hy = 650, ap = a * fade(t, 108.3, 999, .4);
+    ctx.save(); ctx.globalAlpha = ap; ctx.strokeStyle = C.blue; ctx.lineWidth = 8; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.arc(hx, hy, 175, 0, 7); ctx.stroke();
+    // 大脑轮廓 + 运动皮层带
+    ctx.lineWidth = 4; ctx.strokeStyle = C.note;
+    ctx.beginPath(); ctx.ellipse(hx, hy - 30, 128, 96, 0, 0, 7); ctx.stroke();
+    const glow = .5 + .5 * Math.sin(t * 4);
+    ctx.strokeStyle = C.yellow; ctx.lineWidth = 16; ctx.globalAlpha = ap * (.5 + .5 * glow * ramp(t, 109.5, 110.5));
+    ctx.beginPath(); ctx.arc(hx, hy + 50, 160, -Math.PI * .62, -Math.PI * .42); ctx.stroke();
+    ctx.restore();
+    // TMS 线圈
+    const cp = ramp(t, 109.0, 110.0);
+    ctx.save(); ctx.globalAlpha = ap * cp; ctx.strokeStyle = C.white; ctx.lineWidth = 6;
+    const cx0 = hx - 40, cy0 = hy - 225 - (1 - cp) * 60;
+    ctx.beginPath(); ctx.arc(cx0 - 34, cy0, 32, 0, 7); ctx.stroke(); ctx.beginPath(); ctx.arc(cx0 + 34, cy0, 32, 0, 7); ctx.stroke();
+    line([cx0 - 30, cy0 - 30], [cx0 - 130, cy0 - 70]); ctx.restore();
+    text("经颅磁刺激", cx0 - 150, cy0 - 75, 30, C.note, ap * cp, SANS, 500, 3, "right");
+    // 仪表：兴奋性 → 传染倾向
+    const mx = W / 2 + 330, my = 700, mp = ramp(t, 112.6, 115.5);
+    ctx.save(); ctx.globalAlpha = ap * fade(t, 112.4, 999, .4); ctx.strokeStyle = C.note; ctx.lineWidth = 6; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.arc(mx, my, 150, Math.PI, 0); ctx.stroke();
+    ctx.strokeStyle = C.yellow; ctx.lineWidth = 12; ctx.beginPath(); ctx.arc(mx, my, 150, Math.PI, Math.PI + Math.PI * .5 * mp); ctx.stroke();
+    ctx.strokeStyle = C.white; ctx.lineWidth = 6; const ang = Math.PI + Math.PI * .5 * mp;
+    line([mx, my], [mx + Math.cos(ang) * 120, my + Math.sin(ang) * 120]); ctx.restore();
+    text("≈ 50%", mx, my + 60, 54, C.yellow, ap * fade(t, 114.8, 999, .3), SANS, 700, 2);
+    text("个体差异能被解释的部分", mx, my + 120, 28, C.note, ap * fade(t, 112.8, 999, .3), SANS, 400, 2);
+    ctx.restore();
+  }],
+  // 12 是共情吗：天平
+  [118.0, 129.8, (t, a) => {
+    ctx.save(); cam(1 + .03 * ramp(t, 118, 129.8));
+    const cx = W / 2, cy = 470, tilt = Math.sin(t * 1.3) * .06 + .02;
+    ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = C.note; ctx.lineWidth = 6; ctx.lineCap = "round";
+    line([cx, cy], [cx, cy + 300]); line([cx - 120, cy + 300], [cx + 120, cy + 300]);
+    ctx.translate(cx, cy); ctx.rotate(tilt); line([-380, 0], [380, 0]);
+    for (const sx of [-380, 380]) { line([sx, 0], [sx - 90, 120]); line([sx, 0], [sx + 90, 120]); line([sx - 110, 120], [sx + 110, 120]); }
+    ctx.restore();
+    const ly = cy + 100 - Math.sin(tilt) * 380, ry = cy + 100 + Math.sin(tilt) * 380;
+    text("共情", cx - 380, ly + 75, 44, C.yellow, a * fade(t, 118.6, 999, .3), SERIF, 700, 4);
+    text("注意力 · 大脑", cx + 380, ry + 70, 36, C.blue, a * fade(t, 121.4, 999, .3), SERIF, 700, 3);
+    text("年龄 · 其他未知", cx + 380, ry + 118, 30, C.note, a * fade(t, 125.6, 999, .3), SANS, 500, 2);
+    // 8% 的小饼
+    const pp = ramp(t, 126.0, 127.2), px = cx + 650, py = 700, ap = a * fade(t, 125.8, 999, .3);
+    if (ap > 0) {
+      ctx.save(); ctx.globalAlpha = ap; ctx.fillStyle = "#262A33"; ctx.beginPath(); ctx.arc(px, py, 70, 0, 7); ctx.fill();
+      ctx.fillStyle = C.yellow; ctx.beginPath(); ctx.moveTo(px, py); ctx.arc(px, py, 70, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * .08 * pp); ctx.fill(); ctx.restore();
+      text("年龄 ≈ 8%", px, py + 105, 28, C.yellow, ap, SANS, 500, 2);
+    }
+    ctx.restore();
+  }],
+  // 13 小结：已证实 vs 仍在争论
+  [129.8, 136.8, (t, a) => {
+    const rows = [
+      ["✓", "哈欠会传染，约一半人中招", C.green, 130.2],
+      ["✓", "越亲近，越容易被传染", C.green, 130.9],
+      ["✓", "黑猩猩、狗也有类似现象", C.green, 131.6],
+      ["?", "原因就是共情", C.red, 132.6],
+      ["?", "哈欠是为了给大脑降温", C.red, 133.3],
+    ];
+    text("已有证据", W / 2 - 330, 230, 40, C.green, a * fade(t, 130, 999, .3), SANS, 700, 4, "left");
+    text("仍在争论", W / 2 - 330, 560, 40, C.red, a * fade(t, 132.4, 999, .3), SANS, 700, 4, "left");
+    rows.forEach(([m, s, col, t0], i) => {
+      const y = i < 3 ? 310 + i * 70 : 640 + (i - 3) * 70, al = a * fade(t, t0, 999, .3);
+      text(m, W / 2 - 330, y, 44, col, al, SANS, 700, 0, "left");
+      text(s, W / 2 - 260, y, 40, C.white, al, SANS, 500, 3, "left");
+    });
+  }],
+  // 14 结尾：一排人从远处向镜头传过来，最后一个指向你
+  [136.8, 150.2, (t, a) => {
+    const push = 1 + .25 * ramp(t, 147.6, 149.6);
+    ctx.save(); cam(push, W / 2, 640);
+    ctx.save(); ctx.globalAlpha = a * .9; ctx.strokeStyle = "rgba(236,236,236,.10)"; ctx.lineWidth = 2;
+    line([-200, 520], [2200, 520]); ctx.restore();
+    // 透视：越近越大、越往下
+    for (let i = 0; i < 6; i++) {
+      const d = i / 5, s = lerp(.35, .8, d), x = lerp(W / 2 - 620, W / 2 - 140, d), y = lerp(520, 700, d);
+      const al = a * fade(t, 137.0 + i * .1, 999, .4) * (1 - ramp(t, 145.6, 146.4));
+      stick(x, y, s, yawnAmt(t, Y.final[i]), C.blue, al, { phase: i });
+    }
+    const near = fade(t, 145.8, 999, .5);
+    const pt = ramp(t, 146.8, 147.2) * (1 - ramp(t, 147.4, 147.7));
+    stick(W / 2, 800, 1.2, pt > .01 ? 0 : yawnAmt(t, Y.final[6]), C.blue, a * near, { point: pt });
+    ctx.restore();
+  }],
+  // 15 尾卡：计数揭晓
+  [150.0, END + 1, (t, a) => {
+    const n = ALL.length;
+    text("这条视频里，一共出现了", W / 2, 380, 52, C.white, a * fade(t, 150.2, 999, .4), SERIF, 700, 4);
+    text(`${Math.round(n * ramp(t, 150.6, 151.8))} 个哈欠`, W / 2, 500, 120, C.yellow, a * fade(t, 150.6, 999, .4), SERIF, 900, 6);
+    text("你打了几个？", W / 2, 650, 64, C.white, a * fade(t, 152.0, 999, .4), SERIF, 700, 6);
+  }],
+];
+
+function draw(t) {
+  performanceT = t;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  for (const [a, b, fn] of SCENES) { const al = fade(t, a, b, .45); if (al > 0) { ctx.save(); fn(t, al); ctx.restore(); } }
+
+  for (const [a, b, s, row, col] of KEYS) {
+    const al = fade(t, a, b, .35);
+    if (row === 0) text(s, W / 2, 150, 88, col, al); else text(s, W / 2, 262, 60, col, al);
+  }
+  for (const [a, b, s] of NOTES) {
+    const al = fade(t, a, b, .3) * .9; if (al <= 0) continue;
+    ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = C.note; ctx.font = `400 25px ${SANS}`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText("出处 · " + s, 70, 892); ctx.restore();
+  }
+  for (const [a, b, s] of SUBS) {
+    const al = fade(t, a, b, .15); if (al <= 0) continue;
+    ctx.save(); ctx.globalAlpha = al; ctx.font = `500 42px ${SANS}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineWidth = 8; ctx.strokeStyle = "rgba(0,0,0,.75)"; ctx.strokeText(s, W / 2, 985);
+    ctx.fillStyle = C.white; ctx.fillText(s, W / 2, 985); ctx.restore();
+  }
+  // 贯穿道具：右上角哈欠计数器（片名后出现，尾卡前收起）
+  const ca = fade(t, 10.5, 149.8, .5);
+  if (ca > 0) {
+    const n = ALL.filter(s => s <= t).length, last = ALL.filter(s => s <= t).pop() ?? -9;
+    const pop = 1 + .25 * Math.max(0, 1 - (t - last) / .3);
+    ctx.save(); ctx.globalAlpha = ca * .85;
+    ctx.fillStyle = C.yellow; ctx.beginPath(); ctx.ellipse(1640, 72, 10, 16, 0, 0, 7); ctx.fill();
+    ctx.restore();
+    text("哈欠计数", 1665, 72, 26, C.note, ca * .85, SANS, 500, 2, "left");
+    ctx.save(); ctx.translate(1835, 72); ctx.scale(pop, pop);
+    text(String(n), 0, 0, 44, C.yellow, ca, SANS, 700, 0); ctx.restore();
+  }
+
+  // 电影感：暗角 + 颗粒 + 淡入淡出
+  const g = ctx.createRadialGradient(W / 2, H / 2, H * .35, W / 2, H / 2, H * .95);
+  g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,.6)");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(GR[Math.floor(t * 24) % GR.length], 0, 0, W, H);
+  const black = 1 - Math.min(clamp(t / .4), clamp((END - t) / .8));
+  if (black > 0) { ctx.fillStyle = `rgba(0,0,0,${black})`; ctx.fillRect(0, 0, W, H); }
+}
+
+const GR = [];
+for (let k = 0; k < 6; k++) {
+  const cv = document.createElement("canvas"); cv.width = 480; cv.height = 270;
+  const c2 = cv.getContext("2d"), im = c2.createImageData(480, 270);
+  for (let i = 0; i < im.data.length; i += 4) { const v = Math.random() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 14; }
+  c2.putImageData(im, 0, 0); GR.push(cv);
+}
+
+window.draw = draw;
+window.END = END;
+window.yawns = () => Object.values(Y).flat();
+window.ready = document.fonts.ready.then(() => Promise.all([
+  document.fonts.load(`700 96px "Noto Serif SC"`, "哈欠"), document.fonts.load(`900 96px "Noto Serif SC"`, "哈欠"),
+  document.fonts.load(`500 42px "Noto Sans SC"`, "哈欠"), document.fonts.load(`700 42px "Noto Sans SC"`, "哈欠"),
+])).then(() => true);
+</script></body></html>

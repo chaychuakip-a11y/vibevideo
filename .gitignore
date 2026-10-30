@@ -1,0 +1,8 @@
+frames/
+frames_full/
+stills/
+stills_full/
+*.wav
+*.jpg
+events*.json
+yawns.json

@@ -1,0 +1,820 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@500;700;900&family=Geist:wght@700;900&display=swap" rel="stylesheet">
+<style>html,body{margin:0;background:#EFE7D6}canvas{display:block}</style>
+</head><body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// 为什么你排的队总是最慢 · 完整版（约 11 分钟）· 象形统计（ISOTYPE）风格
+const W = 1920, H = 1080;
+const C = { bg: "#EFE7D6", bg2: "#E6DCC6", ink: "#1F1B16", gray: "#8F877A", light: "#C9BFAD", gold: "#D9A21B", red: "#C8352B", panel: "#F7F1E4" };
+const SANS = '"Noto Sans SC", sans-serif', NUM = '"Geist", "Noto Sans SC", sans-serif';
+const ctx = document.getElementById("c").getContext("2d");
+
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const ease = p => { p = clamp(p); return p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const ramp = (t, a, b) => ease((t - a) / (b - a));
+const fade = (t, a, b, d = 0.35) => clamp(Math.min((t - a) / d, (b - t) / d));
+const pop = p => { p = clamp(p); return p < 1 ? lerp(1.5, 1, ease(p)) : 1; };   // 盖章：1.5 → 1
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+let T = 0;
+
+// ───────── 脚本
+const SCRIPT = [
+  { sc: "hook", s: "你一定有过这种时刻：", m: "h_pick", k: "你一定排过这种队" },
+  { sc: "hook", s: "超市结账，三条队看起来差不多长", m: "h_three" },
+  { sc: "hook", s: "你挑了中间这一条", m: "h_you" },
+  { sc: "hook", s: "一开始还好，大家都在往前挪", m: "h_move" },
+  { sc: "hook", s: "然后，你前面的人开始翻找优惠券", m: "h_stall", k: "怎么不动了" },
+  { sc: "hook", s: "左边那队走了一个，又走了一个", m: "h_left" },
+  { sc: "hook", s: "右边那队，连比你后来的人都结完账了", m: "h_right" },
+  { sc: "hook", s: "你心里冒出一句老话：", m: "h_think" },
+  { sc: "hook", s: "“我排的队，怎么总是最慢的？”", m: "h_q", k: "总是最慢？" },
+  { sc: "title", s: "为什么你排的队，总是最慢？", m: "t_title", d: 4.5 },
+  { sc: "title", s: "这期把它拆开讲：概率、随机、注意力、记忆，还有时间感", m: "t_sub" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "一  先算一笔账", no: 1 },
+  { sc: "prob", s: "先假设三条队一模一样", m: "p_same", k: "三条队一样快" },
+  { sc: "prob", s: "收银员一样快，顾客买的东西也差不多", m: "p_same2" },
+  { sc: "prob", s: "那么这一次哪条队最先走完，基本靠运气", m: "p_luck" },
+  { sc: "prob", s: "三条队，每条成为最快的机会都是三分之一", m: "p_third", k: "你最快：1/3" },
+  { sc: "prob", s: "也就是说，你这条最快的机会只有 1/3", m: "p_third2" },
+  { sc: "prob", s: "而“别的某一条比你快”的机会，是 2/3", m: "p_twothird", k: "别人更快：2/3" },
+  { sc: "prob", s: "我们让三条一样的队，跑一千次看看", m: "p_sim", k: "跑一千次" },
+  { sc: "prob", s: "你这条最快的次数，大约三百多次", m: "p_simres" },
+  { sc: "prob", s: "另外六百多次，总有一条队比你先走完", m: "p_simres2" },
+  { sc: "prob", s: "如果是四条队，你最快的机会就只剩 1/4", m: "p_four", k: "队越多 越难最快" },
+  { sc: "prob", s: "五条队，1/5；十条队，只有 1/10", m: "p_ten" },
+  { sc: "prob", s: "所以“别的队比我快”，本来就是大多数时候的常态", m: "p_norm" },
+  { sc: "prob", s: "这不是你运气差，而是你只能排其中一条", m: "p_one", n: "这一思路常见于 Bill Hammack（Engineer Guy）的科普专栏《Why the other line is always faster》" },
+  { sc: "prob", s: "当然，你也有 1/3 的时候是最慢的", m: "p_slow" },
+  { sc: "prob", s: "最快 1/3，中间 1/3，最慢 1/3——你并没有特别倒霉", m: "p_fair", k: "你并不特别倒霉" },
+  { sc: "prob", s: "可为什么感觉上，自己总是落在“最慢”那 1/3 里？", m: "p_why" },
+  { sc: "prob", s: "答案藏在接下来的几个原因里", m: "p_next" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "二  队伍为什么忽快忽慢", no: 2 },
+  { sc: "rand", s: "先看看，一个人结账要花多少时间", m: "r_start", k: "结账时间怎么算" },
+  { sc: "rand", s: "有人专门统计过超市收银：每位顾客都有一段固定时间", m: "r_fixed", n: "Dan Meyer 对超市收银时间的统计（2009 年博客，后经 CBC、Business Insider 等报道）" },
+  { sc: "rand", s: "打招呼、付钱、找零、装袋，平均大约 41 秒", m: "r_41" },
+  { sc: "rand", s: "而每多一件商品，只多大约 3 秒", m: "r_item", k: "一个人 ≈ 41 秒 + 3 秒/件" },
+  { sc: "rand", s: "所以一个人买 50 件，大约 3 分多钟", m: "r_cmp1" },
+  { sc: "rand", s: "四个人各买 10 件，加起来反而要将近 5 分钟", m: "r_cmp2", k: "人数比件数更要紧", n: "按 41 秒/人 + 3 秒/件估算：1×(41+150)=191 秒；4×(41+30)=284 秒" },
+  { sc: "rand", s: "所以看队伍长短，人数往往比购物车更要紧", m: "r_cmp3" },
+  { sc: "rand", s: "更麻烦的，是那些说不准的事", m: "r_rand", k: "说不准的事" },
+  { sc: "rand", s: "找不到会员码、刷卡失败、要换零钱、商品没有条码", m: "r_events" },
+  { sc: "rand", s: "这些事不常发生，可一旦发生，整条队就停住了", m: "r_block" },
+  { sc: "rand", s: "而它会落在哪条队，事先几乎看不出来", m: "r_where" },
+  { sc: "rand", s: "所以队伍不是匀速往前走，而是一阵一阵地走", m: "r_burst", k: "一阵一阵地走" },
+  { sc: "rand", s: "快的时候连走两三个，慢的时候一动不动", m: "r_burst2" },
+  { sc: "rand", s: "你站在队里，很容易正好撞上“一动不动”的那一段", m: "r_hit" },
+  { sc: "rand", s: "队伍越长，碰上意外的机会也越多", m: "r_long" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "三  你只看见别人超过你", no: 3 },
+  { sc: "att", s: "第三个原因，跟你的眼睛有关", m: "a_start", k: "你在看哪里" },
+  { sc: "att", s: "你的队在动的时候，你在干什么？", m: "a_move" },
+  { sc: "att", s: "往前挪、推车、盯着收银台", m: "a_move2" },
+  { sc: "att", s: "你的队不动的时候呢？", m: "a_stop" },
+  { sc: "att", s: "你开始左顾右盼，数旁边那队走了几个", m: "a_look", k: "停下来 才看旁边" },
+  { sc: "att", s: "于是你记下的，几乎全是“别人超过你”的画面", m: "a_count" },
+  { sc: "att", s: "而你超过别人的那些时刻，你根本没在看", m: "a_miss" },
+  { sc: "att", s: "开车的人，也有一模一样的感觉", m: "a_road", k: "旁边车道更快？" },
+  { sc: "att", s: "1999 年，《自然》杂志发表了一项研究", m: "a_nature", n: "Redelmeier & Tibshirani, Nature 401 (1999)：Why cars in the next lane seem to go faster" },
+  { sc: "att", s: "研究者给学车的人看一段相邻车道的录像", m: "a_video" },
+  { sc: "att", s: "大约七成的人觉得，旁边那条车道更快", m: "a_70", k: "约七成觉得旁边更快" },
+  { sc: "att", s: "可实际上，旁边那条平均起来反而略慢一点", m: "a_actual" },
+  { sc: "att", s: "原因之一：车慢的时候会挤在一起", m: "a_bunch" },
+  { sc: "att", s: "你慢慢开，被一长串车超过，这个过程会持续很久", m: "a_pass" },
+  { sc: "att", s: "你快的时候，一下子就超过别人，几秒钟就结束了", m: "a_quick" },
+  { sc: "att", s: "被超过的时间更长、更显眼，你就记住了它", m: "a_remember" },
+  { sc: "att", s: "研究里还有约六成五的人说：有机会就想换道", m: "a_65", k: "想换道的人：约 65%" },
+  { sc: "att", s: "研究者的结论是：换来换去，好处常常只是错觉", m: "a_illusion" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "四  你记住的是最慢的那几次", no: 4 },
+  { sc: "mem", s: "第四个原因：记忆", m: "m_start", k: "你记住了哪几次" },
+  { sc: "mem", s: "假设你排过十次队", m: "m_ten" },
+  { sc: "mem", s: "三次很快，四次正常，三次很慢", m: "m_mix" },
+  { sc: "mem", s: "一个月以后，你还记得哪几次？", m: "m_later" },
+  { sc: "mem", s: "很快的那几次，你几乎不会在意——那是“应该的”", m: "m_fast" },
+  { sc: "mem", s: "正常的那几次，根本没留下印象", m: "m_normal" },
+  { sc: "mem", s: "只有很慢的那几次，你急过、烦过，还眼看着别人走掉", m: "m_slow" },
+  { sc: "mem", s: "心理学里有一个很有名的总结：坏事比好事更有分量", m: "m_bad", k: "坏事更有分量" },
+  { sc: "mem", s: "不好的经历，会被大脑更仔细地处理、更反复地回想", m: "m_proc", n: "Baumeister et al. 2001, Review of General Psychology：Bad is stronger than good" },
+  { sc: "mem", s: "所以回头一想：“我总是排到最慢的队”", m: "m_always" },
+  { sc: "mem", s: "其实是：最慢的那几次，最容易被想起来", m: "m_recall", k: "最容易想起的那几次" },
+  { sc: "mem", s: "还有一种情况更让人难忘：换队", m: "m_switch", k: "换队之后" },
+  { sc: "mem", s: "你等得不耐烦，换到了旁边那条", m: "m_sw1" },
+  { sc: "mem", s: "结果刚换过去，原来那条就动了", m: "m_sw2" },
+  { sc: "mem", s: "这种“早知道就不换了”，比一直老实等着更让人懊恼", m: "m_regret", k: "早知道就不换了" },
+  { sc: "mem", s: "心理学家专门研究过这种“差一点就……”的懊悔", m: "m_cf", n: "Miller & Taylor 1995，收录于《What Might Have Been: The Social Psychology of Counterfactual Thinking》" },
+  { sc: "mem", s: "越是自己主动做出的选择，结果不好时越让人难受", m: "m_own" },
+  { sc: "mem", s: "所以很多人宁可不换——可心里还是会一直比较", m: "m_compare" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "五  等待本身会被拉长", no: 5 },
+  { sc: "time", s: "最后一个原因：同样长的时间，等的时候感觉更长", m: "w_start", k: "等待会被拉长" },
+  { sc: "time", s: "一位研究服务管理的学者，总结过几条等待心理", m: "w_maister", n: "David Maister 1985：The Psychology of Waiting Lines" },
+  { sc: "time", s: "第一条：闲着的时间，比有事做的时间感觉更长", m: "w_idle", k: "闲着等 更漫长" },
+  { sc: "time", s: "第二条：不知道还要等多久，比知道要等多久更难熬", m: "w_unknown", k: "不知道要等多久" },
+  { sc: "time", s: "第三条：焦虑会让等待显得更久", m: "w_anx", k: "越着急 越漫长" },
+  { sc: "time", s: "赶时间的时候排队最难熬——时间没变，感觉被放大了", m: "w_hurry" },
+  { sc: "time", s: "研究时间感的心理学家还发现", m: "w_block" },
+  { sc: "time", s: "当你一直盯着时间、在心里数秒，你会觉得时间过得更慢", m: "w_watch", k: "盯着时间 时间更慢", n: "Block & Zakay 1997 元分析：预先留意时间时，人们对时长的估计更长" },
+  { sc: "time", s: "而排队时你最常做的，恰好就是盯着时间", m: "w_stare" },
+  { sc: "time", s: "有一个机场的故事，很能说明这一点", m: "w_airport", k: "休斯敦机场的故事" },
+  { sc: "time", s: "美国休斯敦的机场，旅客总抱怨等行李太久", m: "w_h1", n: "Alex Stone，《纽约时报》2012：Why Waiting Is Torture" },
+  { sc: "time", s: "机场加了人手，平均等待降到 8 分钟左右，抱怨却没停", m: "w_h2" },
+  { sc: "time", s: "一算才发现：走到转盘大约 1 分钟，然后要站着干等 7 分钟", m: "w_h3" },
+  { sc: "time", s: "于是机场把到达口挪远，让旅客多走一段路", m: "w_h4" },
+  { sc: "time", s: "站着干等的时间变短了——抱怨几乎消失了", m: "w_h5", k: "少干等 少抱怨" },
+  { sc: "time", s: "研究排队的专家说：排队的心理，常常比等待的统计数字更重要", m: "w_larson", n: "Richard Larson（MIT），引自同一篇报道" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "六  把它们放在一起", no: 6 },
+  { sc: "sum", s: "现在，把这几个原因放在一起", m: "s_start", k: "五个原因" },
+  { sc: "sum", s: "一，概率：三条队里，你最快的机会本来只有 1/3", m: "s_1" },
+  { sc: "sum", s: "二，随机：意外让队伍一阵快、一阵慢", m: "s_2" },
+  { sc: "sum", s: "三，注意力：你停下来的时候，才去看别人", m: "s_3" },
+  { sc: "sum", s: "四，记忆：最慢的那几次，最难忘", m: "s_4" },
+  { sc: "sum", s: "五，时间感：干等的时间，被拉长了", m: "s_5" },
+  { sc: "sum", s: "每一个都不算大，叠在一起，就成了“我总是最慢”", m: "s_all", k: "叠在一起" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "七  那可以怎么办", no: 7 },
+  { sc: "fix", s: "有些地方早就想到了办法：只排一条队", m: "f_start", k: "一条队 多个窗口" },
+  { sc: "fix", s: "银行、机场安检常用这种蛇形队：哪个窗口空了，下一位就去哪个", m: "f_snake" },
+  { sc: "fix", s: "这样一来，就不存在“排错队”这回事了", m: "f_noerr" },
+  { sc: "fix", s: "研究排队的专家指出：平均要等多久，不一定差很多", m: "f_avg", n: "Richard Larson 的说法，见 FiveThirtyEight 等关于蛇形队的报道" },
+  { sc: "fix", s: "但每个人之间等待时间的差别，会变小", m: "f_var", k: "等多久 更可预期" },
+  { sc: "fix", s: "来看一个简单的模拟：同样的顾客，同样三个收银台", m: "f_sim" },
+  { sc: "fix", s: "分开排的时候，等待时间更分散，最慢的那批人等得更久", m: "f_split" },
+  { sc: "fix", s: "排成一条的时候，平均略短一点，最慢的那批人也少等了不少", m: "f_single" },
+  { sc: "fix", s: "而且先来先服务，没人越过你，也就少了比较", m: "f_fair" },
+  { sc: "fix", s: "如果只能自己挑队，可以试试这几条", m: "f_tips", k: "几个小办法" },
+  { sc: "fix", s: "一，先数人头，再看购物车", m: "f_t1" },
+  { sc: "fix", s: "二，选好了就别频繁换，来回换很少真的更快", m: "f_t2" },
+  { sc: "fix", s: "三，给自己找点事做，等待会好过很多", m: "f_t3" },
+  { sc: "fix", s: "四，提醒自己：旁边更快，是大多数时候的常态", m: "f_t4" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "尾声", no: 8 },
+  { sc: "end", s: "所以，下次你又看着旁边那队走掉", m: "e_start" },
+  { sc: "end", s: "不一定是你运气差，也不一定是你不会挑", m: "e_luck" },
+  { sc: "end", s: "可能只是概率、意外、注意力、记忆和时间感，一起和你开了个玩笑", m: "e_joke" },
+  { sc: "end", s: "而那些你没注意到的顺利时刻，其实一点也不少", m: "e_good" },
+  { sc: "end", s: "为什么你排的队，总是最慢？", m: "e_title", k: "为什么你排的队总是最慢" },
+  { sc: "end", s: "你上一次排到“最慢的队”，是在哪儿？评论区说说", m: "e_cta", d: 6 },
+];
+const M = {}, RUNS = [];
+{
+  let t = 0.6;
+  for (const e of SCRIPT) {
+    const n = [...e.s.replace(/\s/g, "")].length;
+    e.dur = e.d || clamp(n / 4.6 + 1.0, 2.8, 8);
+    e.t0 = t; e.t1 = t + e.dur; t = e.t1 + 0.15;
+    if (e.m) M[e.m] = e.t0;
+    const last = RUNS[RUNS.length - 1];
+    if (!last || last.sc !== e.sc || e.sc === "chap") RUNS.push({ sc: e.sc, t0: e.t0, t1: e.t1, es: [e] });
+    else { last.t1 = e.t1; last.es.push(e); }
+  }
+}
+const END = Math.ceil(SCRIPT[SCRIPT.length - 1].t1 + 1.5);
+const mk = name => M[name] ?? 1e9;
+const at = (t, name, d = .6) => ramp(t, mk(name), mk(name) + d);
+
+// ───────── 基础图形
+function text(str, x, y, size, col, alpha, weight = 900, align = "center", font = SANS, spacing = 2) {
+  if (alpha <= 0 || str === "" || str == null) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = col;
+  ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = "middle"; ctx.letterSpacing = spacing + "px";
+  ctx.fillText(str, x, y + (1 - Math.min(1, alpha)) * 10); ctx.restore();
+}
+const num = (str, x, y, size, col, alpha, align = "center") => text(str, x, y, size, col, alpha, 900, align, NUM, 0);
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+// 象形小人：脚底中心 (x,y)，高 h
+function person(x, y, h, col, alpha = 1, s = 1) {
+  if (alpha <= 0 || s <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.scale(s, s); ctx.fillStyle = col;
+  const hr = h * .16;
+  ctx.beginPath(); ctx.arc(0, -h + hr, hr, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-h * .14, -h + hr * 2.25); ctx.lineTo(h * .14, -h + hr * 2.25); ctx.lineTo(h * .2, 0); ctx.lineTo(-h * .2, 0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function register(x, y, alpha = 1, label = "") {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = C.ink;
+  rr(x - 40, y - 64, 80, 64, 6); ctx.fill();
+  ctx.fillStyle = C.gold; rr(x - 24, y - 92, 48, 26, 4); ctx.fill();
+  ctx.restore();
+  if (label) text(label, x, y + 30, 26, C.ink, alpha, 700);
+}
+function bubble(x, y, str, alpha, col = C.ink) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.font = `700 26px ${SANS}`;
+  const w = ctx.measureText(str).width + 34;
+  ctx.fillStyle = C.panel; ctx.strokeStyle = col; ctx.lineWidth = 3;
+  rr(x - w / 2, y - 26, w, 52, 26); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - 8, y + 25); ctx.lineTo(x, y + 40); ctx.lineTo(x + 8, y + 25); ctx.fill(); ctx.restore();
+  text(str, x, y, 26, col, alpha, 700);
+}
+function card(x, y, w, h, alpha) { if (alpha <= 0) return; ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = C.panel; rr(x, y, w, h, 18); ctx.fill(); ctx.restore(); }
+
+// ───────── 排队引擎：每条队 = 一串结账完成时刻
+// people[k] = { arr: 到达时刻（相对场景起点），col }，done[k] = 第 k 位结完账的时刻
+function laneFrom(done, n0, arrivals = [], youIdx = -1) {
+  const people = [];
+  for (let k = 0; k < n0; k++) people.push({ arr: -99, col: k === youIdx ? C.red : C.gray });
+  for (const a of arrivals) people.push({ arr: a, col: C.gray });
+  return { done, people };
+}
+// 画一条横向队伍：收银台在 cx，队伍往左排
+function drawLane(L, t, cx, y, alpha, o = {}) {
+  const gap = o.gap || 92, h = o.h || 96;
+  register(cx, y, alpha, o.label);
+  const s = k => clamp((t - L.done[k]) / .5);           // 第 k 位离开的进度
+  let served = 0; for (let k = 0; k < L.people.length; k++) served += ease(s(k));
+  L.people.forEach((p, k) => {
+    if (t < p.arr) return;
+    const leave = ease(s(k));
+    let pos = k; for (let j = 0; j < k; j++) pos -= ease(s(j));
+    const join = clamp((t - p.arr) / .5);
+    let x = cx - 100 - pos * gap;
+    if (p.arr > -50) x -= (1 - ease(join)) * 160;
+    if (leave > 0) x = cx - 100 + leave * 220;
+    const a = alpha * (p.arr > -50 ? ease(join) : 1) * (1 - leave);
+    person(x, y, h, o.colorOf ? o.colorOf(k, p) : p.col, a);
+    if (o.badge && o.badge(k, t)) bubble(x, y - h - 40, o.badge(k, t), a, C.ink);
+  });
+  return served;
+}
+const servedBy = (L, t) => L.done.filter(d => t >= d).length;
+
+// ───────── 模拟数据（加载时算好）
+// 1) 三条一样的队跑 1000 次：每条 5 人，服务时间 = 41 秒 + 3 秒 × 件数（件数 1–30 均匀），外加 8% 的“意外” 30–120 秒
+const SIM = (() => {
+  const r = rng(20261030), wins = [0, 0, 0];
+  for (let i = 0; i < 1000; i++) {
+    const tot = [0, 0, 0].map(() => { let s = 0; for (let k = 0; k < 5; k++) s += 41 + 3 * (1 + Math.floor(r() * 30)) + (r() < .08 ? 30 + r() * 90 : 0); return s; });
+    wins[tot.indexOf(Math.min(...tot))]++;
+  }
+  return wins;   // 你在中间那条：wins[1]
+})();
+// 2) 分开排 vs 一条队：泊松到达、3 个收银台、服务时间指数分布（均值 1 分钟），到达率 2.5 人/分钟
+const QSIM = (() => {
+  const r = rng(7), N = 4000, exp = m => -Math.log(1 - r()) * m;
+  const arr = [], svc = []; let t = 0;
+  for (let i = 0; i < N; i++) { t += exp(1 / 2.5); arr.push(t); svc.push(exp(1)); }
+  // 一条队：先来先服务，谁空去谁
+  const free = [0, 0, 0], w1 = [];
+  for (let i = 0; i < N; i++) { const j = free.indexOf(Math.min(...free)); const st = Math.max(arr[i], free[j]); w1.push(st - arr[i]); free[j] = st + svc[i]; }
+  // 分开排：到达时看哪条人少就排哪条，之后不换
+  const lanes = [[], [], []], w2 = [];
+  for (let i = 0; i < N; i++) {
+    const cnt = lanes.map(L => L.filter(e => e > arr[i]).length);
+    const j = cnt.indexOf(Math.min(...cnt)), last = lanes[j].length ? lanes[j][lanes[j].length - 1] : 0;
+    const st = Math.max(arr[i], last); w2.push(st - arr[i]); lanes[j].push(st + svc[i]);
+  }
+  const stats = w => { const s = w.slice(500), m = s.reduce((a, b) => a + b, 0) / s.length, sd = Math.sqrt(s.reduce((a, b) => a + (b - m) ** 2, 0) / s.length); return { s, m, sd, p90: [...s].sort((a, b) => a - b)[Math.floor(s.length * .9)] }; };
+  return { single: stats(w1), split: stats(w2) };
+})();
+
+// ───────── 场景
+const SCN = {};
+const LANE_X = 1500, LANE_Y = [430, 610, 790];
+
+// 开场：三条队，你在中间，前面的人卡住
+let HOOK = null;
+SCN.hook = (t, a) => {
+  const t0 = mk("h_three"), st = mk("h_stall") - t0;
+  if (!HOOK) HOOK = {
+    A: laneFrom([2, 4.5, 7, st + 1, st + 3.5, st + 6, st + 8.5, st + 11, st + 14, st + 17, st + 20, st + 23], 4, [5, 9, st + 2, st + 5, st + 9, st + 13]),
+    B: laneFrom([2.6, 5.4, 999, 1000, 1001], 3, [], -1),
+    Cc: laneFrom([1.6, 4, 6.4, st + 2, st + 4.5, st + 7, st + 9.5, st + 12, st + 15, st + 19, st + 23], 4, [3, st + 1, st + 4, st + 8]),
+  };
+  if (HOOK.B.people.length === 3) HOOK.B.people.push({ arr: mk("h_you") - t0, col: C.red });
+  const lt = t - t0, la = a * fade(t, t0 - .3, 1e9, .4);
+  const right = mk("h_right") - t0;
+  // 右边那队：一位比你晚到的人（金色）结完账
+  const late = HOOK.Cc.people[5];
+  drawLane(HOOK.A, lt, LANE_X, LANE_Y[0], la, { label: "" });
+  drawLane(HOOK.B, lt, LANE_X, LANE_Y[1], la, { badge: (k, tt) => (k === 2 && tt > st && tt < st + 60) ? "优惠券……？" : null });
+  drawLane(HOOK.Cc, lt, LANE_X, LANE_Y[2], la, { colorOf: (k, p) => (k === 5 && lt > right - 1) ? C.gold : p.col });
+  // 你：头顶的计时
+  if (t > mk("h_you")) {
+    const wait = Math.max(0, t - mk("h_you"));
+    text("你", 280, LANE_Y[1] - 40, 40, C.red, la * fade(t, mk("h_you"), 1e9), 900);
+    num(`${Math.floor(wait * 6 / 60)}:${String(Math.floor(wait * 6) % 60).padStart(2, "0")}`, 280, LANE_Y[1] + 10, 44, C.red, la * fade(t, mk("h_you"), 1e9));
+    text("已等待（示意）", 280, LANE_Y[1] + 52, 22, C.gray, la * fade(t, mk("h_you"), 1e9), 500);
+  }
+  // 旁边走了几个
+  if (t > mk("h_stall") + 1) {
+    const n = servedBy(HOOK.A, lt) + servedBy(HOOK.Cc, lt) - servedBy(HOOK.A, st + .5) - servedBy(HOOK.Cc, st + .5);
+    text("你停下后，旁边走了", 280, 870, 26, C.ink, la, 700);
+    num(`${n} 人`, 280, 920, 52, C.gold, la);
+  }
+};
+SCN.title = (t, a) => {
+  // 背景：一排排灰色小人
+  for (let r = 0; r < 4; r++) for (let k = 0; k < 16; k++) {
+    const isYou = r === 2 && k === 9;
+    person(160 + k * 108, 300 + r * 160, 70, isYou ? C.red : C.light, a * pop((t - mk("t_title") - (r * 16 + k) * .012) / .1) * .9);
+  }
+  card(330, 410, 1260, 260, a);
+  text("为什么你排的队，总是最慢？", W / 2, 505, 84, C.ink, a, 900);
+  text("Why Your Line Always Feels Slower", W / 2, 600, 36, C.red, a * fade(t, mk("t_title") + .6, 1e9), 700, NUM, 1);
+};
+SCN.chap = (t, a, R) => {
+  const e = R.es[0];
+  text(e.ch, W / 2, 500, 92, C.ink, a, 900);
+  for (let k = 1; k <= 7; k++) {
+    const x = W / 2 + (k - 4) * 70;
+    person(x, 640, 50, k === e.no ? C.red : (k < e.no ? C.ink : C.light), a * pop((t - R.t0 - .2 - k * .05) / .1));
+  }
+};
+// 概率：三条一样的队 → 1/3 → 跑一千次 → 队越多越难最快
+SCN.prob = (t, a) => {
+  const part1 = a * fade(t, mk("p_same") - .3, mk("p_sim"), .4);
+  if (part1 > 0) {
+    ["A", "你", "C"].forEach((lab, i) => {
+      const y = 300 + i * 170, you = i === 1;
+      text(lab, 330, y - 30, 40, you ? C.red : C.ink, part1, 900);
+      for (let k = 0; k < 5; k++) person(500 + k * 95, y, 90, you && k === 4 ? C.red : C.gray, part1);
+      register(1080, y, part1);
+      const win = at(t, "p_third", .5);
+      // 三个皇冠位置，示意“谁都可能最快”
+      ctx.save(); ctx.globalAlpha = part1 * win; ctx.fillStyle = C.gold; rr(1180, y - 70, 120, 56, 28); ctx.fill(); ctx.restore();
+      num("1/3", 1240, y - 42, 34, C.ink, part1 * win);
+    });
+    const two = at(t, "p_twothird", .5);
+    if (two > 0) {
+      ctx.save(); ctx.globalAlpha = part1 * two; ctx.strokeStyle = C.gold; ctx.lineWidth = 6;
+      rr(300, 200, 1040, 120, 20); ctx.stroke(); rr(300, 540, 1040, 120, 20); ctx.stroke(); ctx.restore();
+      num("2/3", 1520, 470, 120, C.gold, part1 * two);
+      text("某一条别的队更快", 1520, 560, 34, C.ink, part1 * two, 700);
+    }
+  }
+  // 跑一千次：三根计数条
+  const part2 = a * fade(t, mk("p_sim") - .2, mk("p_four"), .4);
+  if (part2 > 0) {
+    const prog = ramp(t, mk("p_sim") + .5, mk("p_simres") + 1.5), trials = Math.round(1000 * prog);
+    num(`第 ${trials} 次`, W / 2, 260, 56, C.ink, part2);
+    ["A 队最快", "你这队最快", "C 队最快"].forEach((lab, i) => {
+      const y = 400 + i * 150, v = Math.round(SIM[i] * prog), you = i === 1;
+      text(lab, 520, y, 36, you ? C.red : C.ink, part2, 900, "right");
+      // 每 10 次一个小人
+      const n = Math.round(v / 10);
+      for (let k = 0; k < n; k++) person(570 + k * 25, y + 30, 54, you ? C.red : C.gray, part2);
+      num(`${v}`, 570 + n * 25 + 60, y, 44, you ? C.red : C.ink, part2, "left");
+    });
+    text("每个小人 = 10 次 · 模拟：每位顾客 41 秒 + 3 秒/件，偶有意外", W / 2, 860, 26, C.gray, part2 * fade(t, mk("p_simres"), 1e9), 500);
+    const oth = fade(t, mk("p_simres2"), 1e9, .4);
+    num(`${SIM[0] + SIM[2]}`, 1640, 550, 90, C.gold, part2 * oth);
+    text("别的队更快", 1640, 630, 32, C.ink, part2 * oth, 700);
+  }
+  // 队越多越难最快
+  const part3 = a * fade(t, mk("p_four") - .2, mk("p_slow"), .4);
+  if (part3 > 0) {
+    [[3, "p_four"], [4, "p_four"], [5, "p_ten"], [10, "p_ten"]].forEach(([n, mm], i) => {
+      const y = 330 + i * 140, al = part3 * fade(t, mk(mm) + (i % 2) * .8, 1e9, .3);
+      text(`${n} 条队`, 420, y - 30, 36, C.ink, al, 900, "right");
+      for (let k = 0; k < n; k++) person(500 + k * 80, y, 80, k === 0 ? C.red : C.gray, al * pop((t - mk(mm) - (i % 2) * .8 - k * .04) / .1));
+      num(`1/${n}`, 1420, y - 30, 64, C.red, al);
+    });
+    text("你最快的机会", 1420, 250, 30, C.gray, part3, 700);
+  }
+  // 最快 / 中间 / 最慢 各 1/3
+  const part4 = a * fade(t, mk("p_slow") - .2, 1e9, .4);
+  if (part4 > 0) {
+    [["最快", C.gold], ["中间", C.gray], ["最慢", C.ink]].forEach(([lab, col], i) => {
+      const x = 560 + i * 400, al = part4 * fade(t, mk(i === 2 ? "p_slow" : "p_fair") - (i === 2 ? 0 : 0), 1e9, .3);
+      card(x - 170, 300, 340, 400, al);
+      for (let k = 0; k < 3; k++) person(x - 80 + k * 80, 520, 120, k === 1 ? C.red : col, al);
+      text(lab, x, 600, 44, C.ink, al, 900);
+      num("1/3", x, 660, 44, C.red, al);
+    });
+    const q = fade(t, mk("p_why"), 1e9, .4);
+    if (q > 0) { ctx.save(); ctx.globalAlpha = part4 * q; ctx.strokeStyle = C.red; ctx.lineWidth = 8; rr(1150, 285, 360, 430, 24); ctx.stroke(); ctx.restore();
+      text("总觉得在这里？", 1330, 770, 36, C.red, part4 * q, 900); }
+  }
+};
+// 随机：结账时间构成 → 意外 → 一阵一阵
+let RAND_LANES = null;
+SCN.rand = (t, a) => {
+  const p1 = a * fade(t, mk("r_start") - .3, mk("r_rand"), .4);
+  if (p1 > 0) {
+    // 一个人的时间条：41 秒固定 + 每件 3 秒
+    const sx = 360, scale = 3.2;  // 每秒 3.2 像素
+    const row = (y, people, items, label, mm) => {
+      const al = p1 * fade(t, mk(mm), 1e9, .3);
+      text(label, sx - 30, y, 34, C.ink, al, 900, "right");
+      let x = sx;
+      for (let i = 0; i < people; i++) {
+        const g = ramp(t, mk(mm) + .3 + i * .5, mk(mm) + .8 + i * .5);
+        ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = C.ink; ctx.fillRect(x, y - 30, 41 * scale * g, 60); ctx.restore();
+        x += 41 * scale * g;
+        const it = items / people;
+        ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = C.gold;
+        for (let k = 0; k < it * g; k++) { ctx.fillRect(x + 1, y - 30, 3 * scale - 2, 60); x += 3 * scale; }
+        ctx.restore();
+      }
+      return x;
+    };
+    const al41 = p1 * fade(t, mk("r_fixed"), 1e9, .3);
+    if (al41 > 0) {
+      ctx.save(); ctx.globalAlpha = al41; ctx.fillStyle = C.ink; ctx.fillRect(sx, 300, 41 * scale * at(t, "r_41", .8), 60); ctx.restore();
+      num("41 秒", sx + 41 * scale + 30, 330, 44, C.ink, p1 * fade(t, mk("r_41") + .6, 1e9), "left");
+      text("打招呼 · 付钱 · 找零 · 装袋", sx, 400, 28, C.gray, p1 * fade(t, mk("r_41"), 1e9), 700, "left");
+      const ia = p1 * fade(t, mk("r_item"), 1e9, .3);
+      ctx.save(); ctx.globalAlpha = ia; ctx.fillStyle = C.gold; ctx.fillRect(sx + 41 * scale + 230, 300, 3 * scale * 4, 60); ctx.restore();
+      text("每件 +3 秒", sx + 41 * scale + 300, 330, 34, C.gold, ia, 900, "left");
+    }
+    if (t > mk("r_cmp1")) {
+      const x1 = row(560, 1, 50, "1 人 × 50 件", "r_cmp1");
+      num("≈ 191 秒", x1 + 30, 560, 44, C.ink, p1 * fade(t, mk("r_cmp1") + 1, 1e9), "left");
+    }
+    if (t > mk("r_cmp2")) {
+      const x2 = row(720, 4, 40, "4 人 × 10 件", "r_cmp2");
+      num("≈ 284 秒", x2 + 30, 720, 44, C.red, p1 * fade(t, mk("r_cmp2") + 2.4, 1e9), "left");
+    }
+  }
+  // 意外：三条队一起走，意外随机落在某条队
+  const p2 = a * fade(t, mk("r_rand") - .2, mk("r_burst"), .4);
+  const t0 = mk("r_rand");
+  if (!RAND_LANES) {
+    const mkDone = (seed, stallAt, stallLen) => { const r = rng(seed), d = []; let x = 1; for (let k = 0; k < 30; k++) { x += 1.4 + r() * 1.4; if (Math.abs(x - stallAt) < 1.5 && stallLen) { x += stallLen; stallLen = 0; } d.push(x); } return d; };
+    RAND_LANES = [
+      laneFrom(mkDone(11, 9, 0), 8, [...Array(20)].map((_, i) => 2 + i * 2.2)),
+      laneFrom(mkDone(12, 6, 9), 8, [...Array(20)].map((_, i) => 2.5 + i * 2.2)),
+      laneFrom(mkDone(13, 15, 8), 8, [...Array(20)].map((_, i) => 1.5 + i * 2.2)),
+    ];
+  }
+  if (p2 > 0) {
+    const lt = t - t0;
+    const tags = ["找不到会员码", "刷卡失败", "要换零钱", "没有条码"];
+    RAND_LANES.forEach((L, i) => {
+      drawLane(L, lt, LANE_X, LANE_Y[i], p2, { badge: (k, tt) => {
+        if (i === 1 && tt > 5.5 && tt < 15) return k === servedBy(L, 5.5) ? tags[0] : null;
+        if (i === 2 && tt > 14.5 && tt < 23) return k === servedBy(L, 14.5) ? tags[1] : null;
+        return null; } });
+    });
+  }
+  // 一阵一阵：已结账人数随时间的阶梯
+  const p3 = a * fade(t, mk("r_burst") - .2, 1e9, .4);
+  if (p3 > 0) {
+    const gx = 300, gy = 800, gw = 1300, gh = 460, r = rng(99), steps = []; let x = 0;
+    for (let k = 0; k < 18; k++) { x += (r() < .25 ? 3.5 + r() * 3 : .5 + r() * .8); steps.push(x); }
+    const tot = steps[steps.length - 1], prog = ramp(t, mk("r_burst") + .3, mk("r_burst2") + 3);
+    ctx.save(); ctx.globalAlpha = p3; ctx.strokeStyle = C.ink; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(gx, gy - gh); ctx.lineTo(gx, gy); ctx.lineTo(gx + gw, gy); ctx.stroke();
+    // 匀速虚线
+    ctx.setLineDash([12, 10]); ctx.strokeStyle = C.gray; ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx + gw * prog, gy - gh * prog); ctx.stroke(); ctx.setLineDash([]);
+    // 实际阶梯
+    ctx.strokeStyle = C.gold; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(gx, gy);
+    let cnt = 0;
+    for (const s of steps) { const sx = gx + gw * s / tot; if (sx > gx + gw * prog) break; ctx.lineTo(sx, gy - gh * cnt / 18); cnt++; ctx.lineTo(sx, gy - gh * cnt / 18); }
+    ctx.lineTo(gx + gw * prog, gy - gh * cnt / 18); ctx.stroke(); ctx.restore();
+    text("时间 →", gx + gw, gy + 36, 28, C.gray, p3, 700, "right");
+    text("已结账人数", gx - 20, gy - gh - 30, 28, C.gray, p3, 700, "left");
+    text("想象中：匀速", gx + gw - 20, gy - gh + 20, 28, C.gray, p3 * fade(t, mk("r_burst") + 1, 1e9), 700, "right");
+    text("实际上：一阵一阵", gx + gw - 20, gy - gh + 66, 28, C.gold, p3 * fade(t, mk("r_burst") + 1.5, 1e9), 900, "right");
+    // 你撞上平台段
+    const hy = fade(t, mk("r_hit"), 1e9, .4);
+    if (hy > 0) { let i = steps.findIndex((s, k) => k > 0 && s - steps[k - 1] > 3); const sx0 = gx + gw * steps[i - 1] / tot, sx1 = gx + gw * steps[i] / tot, yy = gy - gh * i / 18;
+      person((sx0 + sx1) / 2, yy - 10, 70, C.red, p3 * hy); text("一动不动", (sx0 + sx1) / 2, yy - 110, 30, C.red, p3 * hy, 900); }
+    const lg = fade(t, mk("r_long"), 1e9, .4);
+    text("队越长 → 碰上意外的机会越多", W / 2, 890, 34, C.ink, p3 * lg, 900);
+  }
+};
+// 注意力：你停下才看旁边 → 车道研究
+let ATT = null;
+function eye(x, y, dir, alpha) {   // dir: 0 向前（右），1 向旁边（上下）
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = C.panel; ctx.strokeStyle = C.ink; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.ellipse(x, y, 46, 28, 0, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(x + lerp(18, 0, dir), y + lerp(0, -12, dir), 13, 0, 7); ctx.fill(); ctx.restore();
+}
+SCN.att = (t, a) => {
+  const p1 = a * fade(t, mk("a_start") - .3, mk("a_road"), .4), t0 = mk("a_move");
+  if (!ATT) {
+    const st = mk("a_stop") - t0;
+    ATT = {
+      st, A: laneFrom([...Array(30)].map((_, k) => 1 + k * 2.1), 6, [...Array(26)].map((_, k) => 1.5 + k * 2.1)),
+      B: laneFrom([1.2, 3, 4.8, 6.6, ...[...Array(20)].map((_, k) => st + 18 + k * 2)], 6, [...Array(20)].map((_, k) => 2 + k * 3), 5),
+      Cc: laneFrom([...Array(30)].map((_, k) => 1.6 + k * 1.9), 6, [...Array(26)].map((_, k) => 2 + k * 1.9)),
+    };
+  }
+  if (p1 > 0) {
+    const lt = t - t0;
+    drawLane(ATT.A, lt, LANE_X, LANE_Y[0], p1);
+    drawLane(ATT.B, lt, LANE_X, LANE_Y[1], p1);
+    drawLane(ATT.Cc, lt, LANE_X, LANE_Y[2], p1);
+    const moving = lt < ATT.st;
+    eye(200, LANE_Y[1] - 60, moving ? 0 : ramp(lt, ATT.st, ATT.st + .5), p1 * fade(t, t0, 1e9));
+    text(moving ? "看前面" : "看旁边", 200, LANE_Y[1] + 10, 28, moving ? C.ink : C.red, p1 * fade(t, t0, 1e9), 900);
+    const passed = Math.max(0, servedBy(ATT.A, lt) + servedBy(ATT.Cc, lt) - servedBy(ATT.A, ATT.st) - servedBy(ATT.Cc, ATT.st));
+    const cA = p1 * fade(t, mk("a_count"), 1e9, .4);
+    card(80, 840, 440, 120, cA);
+    text("记住的：别人超过你", 300, 870, 28, C.ink, cA, 700); num(`${passed} 次`, 300, 920, 44, C.gold, cA);
+    const cB = p1 * fade(t, mk("a_miss"), 1e9, .4);
+    card(560, 840, 440, 120, cB);
+    text("没在看：你超过别人", 780, 870, 28, C.ink, cB, 700); num("?", 780, 920, 44, C.gray, cB);
+  }
+  // 车道：慢道挤、快道稀；同样的车流
+  const p2 = a * fade(t, mk("a_road") - .2, mk("a_65"), .4);
+  if (p2 > 0) {
+    const r0 = mk("a_road"), lt = t - r0;
+    const roadY = [430, 640];
+    ctx.save(); ctx.globalAlpha = p2; ctx.fillStyle = "#D6CCB7"; ctx.fillRect(0, 340, W, 390);
+    ctx.strokeStyle = C.panel; ctx.lineWidth = 6; ctx.setLineDash([40, 30]); ctx.beginPath(); ctx.moveTo(0, 535); ctx.lineTo(W, 535); ctx.stroke(); ctx.restore();
+    const car = (x, y, col) => { ctx.save(); ctx.globalAlpha = p2; ctx.fillStyle = col; rr(x - 50, y - 26, 100, 52, 14); ctx.fill(); ctx.fillStyle = C.panel; ctx.globalAlpha *= .7; rr(x - 8, y - 18, 30, 36, 6); ctx.fill(); ctx.restore(); };
+    // 慢道（你所在）：车距 130，速度 60；快道：车距 260，速度 120 → 车流量相同
+    const slowV = 60, fastV = 120;
+    for (let k = -2; k < 18; k++) { const x = ((k * 130 + lt * slowV) % (20 * 130)) - 130; car(x, roadY[1], C.gray); }
+    for (let k = -2; k < 10; k++) { const x = ((k * 260 + lt * fastV) % (12 * 260)) - 260; car(x, roadY[0], C.gray); }
+    // 你：慢道中央，相对屏幕不动（镜头跟着你）——改为屏幕中心固定车
+    car(W / 2, roadY[1], C.red);
+    text("你", W / 2, roadY[1] + 60, 28, C.red, p2, 900);
+    text("旁边车道", 120, roadY[0] - 60, 28, C.ink, p2, 700, "left");
+    const ba = p2 * fade(t, mk("a_bunch"), 1e9, .4);
+    text("慢的时候：车挤在一起", 120, 780, 30, C.ink, ba, 900, "left");
+    text("快的时候：车拉得很开", 120, 300, 30, C.ink, ba, 900, "left");
+    // 七成
+    const s7 = p2 * fade(t, mk("a_70"), mk("a_bunch"), .4);
+    if (s7 > 0) { card(1290, 745, 570, 180, s7);
+      for (let k = 0; k < 10; k++) person(1350 + k * 50, 905, 80, k < 7 ? C.gold : C.light, s7 * pop((t - mk("a_70") - k * .04) / .1));
+      const ac = fade(t, mk("a_actual"), 1e9, .4);
+      text("10 人里 7 人：觉得旁边更快", 1575, 780, 28, C.ink, s7 * (1 - ac), 700);
+      text("实际：旁边平均反而略慢", 1575, 780, 28, C.red, s7 * ac, 900); }
+  }
+  // 想换道
+  const p3 = a * fade(t, mk("a_65") - .2, 1e9, .4);
+  if (p3 > 0) {
+    for (let k = 0; k < 20; k++) person(460 + (k % 10) * 100, 480 + Math.floor(k / 10) * 170, 120, k < 13 ? C.gold : C.light, p3 * pop((t - mk("a_65") - k * .03) / .1));
+    text("20 人里约 13 人：有机会就想换道", W / 2, 720, 36, C.ink, p3, 900);
+    text("换来换去，好处常常只是错觉", W / 2, 800, 40, C.red, p3 * fade(t, mk("a_illusion"), 1e9, .4), 900);
+  }
+};
+// 记忆：十次排队 → 只剩最慢的几次；换队的懊悔
+const TEN = ["快", "慢", "正常", "快", "正常", "慢", "正常", "快", "正常", "慢"];
+SCN.mem = (t, a) => {
+  const p1 = a * fade(t, mk("m_ten") - .3, mk("m_switch"), .4);
+  if (p1 > 0) {
+    TEN.forEach((kind, i) => {
+      const x = 330 + (i % 5) * 315, y = 330 + Math.floor(i / 5) * 290;
+      const fast = kind === "快", slow = kind === "慢";
+      let al = p1 * pop((t - mk("m_ten") - i * .08) / .12) * fade(t, mk("m_ten") + i * .08, 1e9, .2);
+      const shown = at(t, "m_mix", .5);
+      let sc = 1;
+      if (fast) al *= lerp(1, .25, at(t, "m_fast", .8));
+      if (kind === "正常") al *= lerp(1, .08, at(t, "m_normal", .8));
+      if (slow) sc = lerp(1, 1.15, at(t, "m_slow", .8));
+      ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc);
+      card(-130, -110, 260, 220, al);
+      // 小队伍
+      for (let k = 0; k < 3; k++) person(-60 + k * 50, 40, 70, k === 2 ? C.red : C.gray, al);
+      const col = fast ? C.gold : slow ? C.ink : C.gray;
+      ctx.save(); ctx.globalAlpha = al * shown; ctx.fillStyle = col; rr(-110, 62, (fast ? 50 : slow ? 220 : 120), 22, 11); ctx.fill(); ctx.restore();
+      text(`第 ${i + 1} 次`, 0, -80, 26, C.gray, al, 700);
+      text(kind, 0, 104 + 20, 30, col, al * shown, 900);
+      if (slow) text("记得", 90, -80, 26, C.red, al * fade(t, mk("m_slow"), 1e9, .3), 900);
+      ctx.restore();
+    });
+    const later = fade(t, mk("m_later"), mk("m_bad"), .4);
+    text("一个月以后……", W / 2, 230, 40, C.ink, p1 * later, 900);
+    const al2 = p1 * fade(t, mk("m_always"), 1e9, .4);
+    text("“我总是排到最慢的队”", W / 2, 230, 44, C.red, al2 * (1 - fade(t, mk("m_recall"), 1e9, .4)), 900);
+    text("= 最慢的那几次，最容易想起来", W / 2, 230, 44, C.ink, p1 * fade(t, mk("m_recall"), 1e9, .4), 900);
+  }
+  // 换队
+  const p2 = a * fade(t, mk("m_switch") - .2, 1e9, .4);
+  if (p2 > 0) {
+    const t0 = mk("m_sw1"), sw = mk("m_sw2") - t0;
+    const lt = t - t0;
+    if (!SCN._sw) SCN._sw = {
+      A: laneFrom([999, 1000, 1001, sw + .6, sw + 1.6, sw + 2.6, sw + 3.6, sw + 4.6, sw + 5.6], 4),
+      B: laneFrom([1.5, 4, 999, 1000, 1001, 1002], 3),
+    };
+    const S = SCN._sw;
+    // 你：先在上面那条第 4 位，lt≈0.6 起走到下面那条队尾
+    const move = ramp(lt, .6, 1.8);
+    drawLane(S.A, lt, LANE_X, LANE_Y[0] + 40, p2, { colorOf: (k, p) => (k === 3 && move < .05) ? C.red : p.col });
+    drawLane(S.B, lt, LANE_X, LANE_Y[2] - 40, p2);
+    if (move > .05) {
+      const fromX = LANE_X - 100 - 3 * 92, toX = LANE_X - 100 - (3 - Math.min(2, servedBy(S.B, lt))) * 92;
+      person(lerp(fromX, toX, move), lerp(LANE_Y[0] + 40, LANE_Y[2] - 40, move), 96, C.red, p2);
+    }
+    if (move > .05 && S.A.people[3]) S.A.people[3].col = C.light;
+    const rg = fade(t, mk("m_regret"), 1e9, .4);
+    bubble(LANE_X - 100 - 2 * 92, LANE_Y[2] - 200, "早知道就不换了……", p2 * rg, C.red);
+    text("原来那条：动了", LANE_X - 520, LANE_Y[0] - 90, 30, C.gold, p2 * fade(t, mk("m_sw2") + .6, 1e9, .3), 900);
+    const own = fade(t, mk("m_own"), 1e9, .4);
+    card(140, 820, 700, 110, p2 * own);
+    text("自己选的 → 结果不好时更难受", 490, 875, 32, C.ink, p2 * own, 900);
+  }
+};
+// 时间感：闲着 vs 有事做、不确定、焦虑、盯着时间、机场
+function clock(x, y, r, t, alpha, speed = 1) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = C.panel; ctx.strokeStyle = C.ink; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); ctx.stroke();
+  for (let k = 0; k < 12; k++) { const an = k * Math.PI / 6; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x + Math.cos(an) * r * .82, y + Math.sin(an) * r * .82); ctx.lineTo(x + Math.cos(an) * r * .92, y + Math.sin(an) * r * .92); ctx.stroke(); }
+  const an = -Math.PI / 2 + t * speed * Math.PI / 30;
+  ctx.strokeStyle = C.red; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(an) * r * .78, y + Math.sin(an) * r * .78); ctx.stroke(); ctx.restore();
+}
+SCN.time = (t, a) => {
+  const p1 = a * fade(t, mk("w_start") - .3, mk("w_airport"), .4);
+  if (p1 > 0) {
+    clock(260, 330, 90, t * 6, p1 * fade(t, mk("w_start"), mk("w_idle"), .4));
+    // 三条原则卡片
+    const cards = [["w_idle", "闲着等", "有事做", "同样 3 分钟"], ["w_unknown", "不知道还要多久", "知道还要多久", ""], ["w_anx", "着急赶时间", "不赶时间", ""]];
+    cards.forEach(([mm, l1, l2], i) => {
+      const y = 330 + i * 190, al = p1 * fade(t, mk(mm), 1e9, .4);
+      if (al <= 0) return;
+      card(420, y - 80, 1180, 160, al);
+      text(l1, 470, y - 30, 32, C.red, al, 900, "left"); text(l2, 470, y + 34, 32, C.gray, al, 700, "left");
+      const g = at(t, mm, 1.2);
+      ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = C.red; ctx.fillRect(830, y - 50, 700 * g, 40);
+      ctx.fillStyle = C.gray; ctx.fillRect(830, y + 14, 400 * g, 40); ctx.restore();
+      text("感觉上更长", 830 + 700 * g - 10, y - 30, 24, C.panel, al * g, 900, "right");
+    });
+    text("条形长度 = 感觉上的长短（示意）", 1600, 900, 24, C.gray, p1 * fade(t, mk("w_idle"), 1e9), 500, "right");
+    // 盯着时间：大钟走得慢
+    const wa = p1 * fade(t, mk("w_block"), 1e9, .4);
+    if (wa > 0) {
+      ctx.save(); ctx.globalAlpha = wa * .92; ctx.fillStyle = C.bg; ctx.fillRect(0, 220, W, 720); ctx.restore();
+      clock(700, 560, 220, mk("w_watch") + (t - mk("w_watch")) * .35, wa, 6);
+      eye(1200, 480, 0, wa * fade(t, mk("w_watch"), 1e9));
+      person(1200, 760, 200, C.red, wa * fade(t, mk("w_watch"), 1e9));
+      text("一直盯着 → 觉得更慢", 1200, 840, 34, C.ink, wa * fade(t, mk("w_stare"), 1e9, .4), 900);
+    }
+  }
+  // 机场
+  const p2 = a * fade(t, mk("w_airport") - .2, 1e9, .4);
+  if (p2 > 0) {
+    const bar = (y, walk, wait, label, al) => {
+      if (al <= 0) return;
+      const sc = 120;
+      text(label, 380, y, 32, C.ink, al, 900, "right");
+      ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = C.gold; ctx.fillRect(420, y - 32, walk * sc, 64); ctx.fillStyle = C.ink; ctx.fillRect(420 + walk * sc, y - 32, wait * sc, 64); ctx.restore();
+      text("走路", 420 + walk * sc / 2, y, 26, C.ink, al, 900);
+      text("站着干等", 420 + walk * sc + wait * sc / 2, y, 26, C.panel, al, 900);
+    };
+    // 抱怨小人
+    const comp = (x, y, n, al) => { for (let k = 0; k < 12; k++) bubble(x + (k % 6) * 70, y + Math.floor(k / 6) * 70, "!", al * (k < n ? 1 : 0), C.red); };
+    const s1 = p2 * fade(t, mk("w_h1"), 1e9, .4);
+    text("行李转盘", 1500, 260, 32, C.ink, s1, 900);
+    ctx.save(); ctx.globalAlpha = s1; ctx.strokeStyle = C.ink; ctx.lineWidth = 8; ctx.beginPath(); ctx.ellipse(1500, 340, 160, 50, 0, 0, 7); ctx.stroke(); ctx.restore();
+    num(at(t, "w_h2", 1) > .5 ? "≈ 8 分钟" : "等太久！", 1500, 440, 44, at(t, "w_h2", 1) > .5 ? C.ink : C.red, s1);
+    bar(620, 1, 7, "原来", p2 * fade(t, mk("w_h3"), 1e9, .4));
+    text("1 分钟", 420 + 60, 680, 26, C.gold, p2 * fade(t, mk("w_h3"), 1e9, .4), 900);
+    text("约 7 分钟", 420 + 120 + 420, 680, 26, C.ink, p2 * fade(t, mk("w_h3"), 1e9, .4), 900);
+    bar(790, 6, 2, "改了以后", p2 * fade(t, mk("w_h4"), 1e9, .4));
+    text("示意：走得更远，干等更短", 420, 850, 24, C.gray, p2 * fade(t, mk("w_h4"), 1e9, .4), 500, "left");
+    const before = p2 * fade(t, mk("w_h1") + .5, 1e9, .4) * (1 - at(t, "w_h5", 1.2));
+    comp(1300, 520, 12, before);
+    const after = p2 * at(t, "w_h5", 1.2);
+    text("抱怨几乎消失", 1500, 600, 40, C.ink, after, 900);
+    const lq = p2 * fade(t, mk("w_larson"), 1e9, .4);
+    if (lq > 0) { ctx.save(); ctx.globalAlpha = lq * .95; ctx.fillStyle = C.bg; ctx.fillRect(0, 220, W, 700); ctx.restore();
+      card(260, 380, 1400, 260, lq);
+      text("“排队的心理，常常比等待的统计数字更重要。”", W / 2, 480, 48, C.ink, lq, 900);
+      text("—— Richard Larson（MIT，排队研究者）", W / 2, 570, 30, C.gray, lq, 700); }
+  }
+};
+// 小结：五张卡
+const FIVE = [["概率", "最快只有 1/3"], ["随机", "一阵快一阵慢"], ["注意力", "停下才看别人"], ["记忆", "慢的最难忘"], ["时间感", "干等被拉长"]];
+SCN.sum = (t, a) => {
+  const all = at(t, "s_all", 1.4);
+  FIVE.forEach(([h1, h2], i) => {
+    const al = a * fade(t, mk("s_" + (i + 1)), 1e9, .4);
+    const x0 = 230 + i * 365, y0 = 330;
+    const x = lerp(x0, W / 2 - 160 + (i - 2) * 14, all), y = lerp(y0, 360 + i * 14, all);
+    card(x, y, 320, 400, al);
+    num(String(i + 1), x + 160, y + 80, 80, C.red, al);
+    text(h1, x + 160, y + 200, 48, C.ink, al, 900);
+    text(h2, x + 160, y + 280, 30, C.gray, al, 700);
+  });
+  text("“我总是最慢”", W / 2, 840, 56, C.red, a * all, 900);
+};
+// 办法：蛇形队 + 模拟分布 + 小办法
+SCN.fix = (t, a) => {
+  const p1 = a * fade(t, mk("f_start") - .3, mk("f_sim"), .4);
+  if (p1 > 0) {
+    // 蛇形队路径
+    const path = []; for (let r = 0; r < 4; r++) { const y = 400 + r * 110; const xs = r % 2 ? [1100, 400] : [400, 1100]; path.push([xs[0], y], [xs[1], y]); }
+    ctx.save(); ctx.globalAlpha = p1 * .5; ctx.strokeStyle = C.gray; ctx.lineWidth = 4; ctx.setLineDash([14, 12]);
+    ctx.beginPath(); path.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); ctx.restore();
+    // 沿路径的人：整体向前流动
+    const L = path.reduce((s, p, i) => i ? s + Math.hypot(p[0] - path[i - 1][0], p[1] - path[i - 1][1]) : 0, 0);
+    const ptAt = d => { for (let i = 1; i < path.length; i++) { const seg = Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]); if (d <= seg) { const q = d / seg; return [lerp(path[i - 1][0], path[i][0], q), lerp(path[i - 1][1], path[i][1], q)]; } d -= seg; } return path[path.length - 1]; };
+    const flow = (t - mk("f_start")) * 55;
+    for (let k = 0; k < 26; k++) { const d = L - ((k * 115 + flow) % L); const [x, y] = ptAt(d); person(x, y + 40, 80, k === 13 ? C.red : C.gray, p1); }
+    // 三个收银台：分别接走
+    [0, 1, 2].forEach(i => register(1500, 400 + i * 160, p1, ["1", "2", "3"][i]));
+    ctx.save(); ctx.globalAlpha = p1 * fade(t, mk("f_snake") + .5, 1e9); ctx.strokeStyle = C.gold; ctx.lineWidth = 5;
+    [0, 1, 2].forEach(i => { ctx.beginPath(); ctx.moveTo(1110, 730); ctx.quadraticCurveTo(1300, 730, 1440, 380 + i * 160); ctx.stroke(); }); ctx.restore();
+    text("哪个空了去哪个", 1300, 800, 32, C.gold, p1 * fade(t, mk("f_snake") + .5, 1e9), 900);
+    text("不存在“排错队”", 760, 300, 40, C.red, p1 * fade(t, mk("f_noerr"), 1e9, .4), 900);
+    const va = p1 * fade(t, mk("f_avg"), 1e9, .4);
+    text("平均等待：不一定差很多", 760, 880, 32, C.ink, va, 700);
+    text("彼此差别：变小", 760, 930, 32, C.red, p1 * fade(t, mk("f_var"), 1e9, .4), 900);
+  }
+  // 模拟：等待时间分布（点阵）
+  const p2 = a * fade(t, mk("f_sim") - .2, mk("f_tips"), .4);
+  if (p2 > 0) {
+    const draw = (S, y, label, mm, col) => {
+      const al = p2 * fade(t, mk(mm), 1e9, .4); if (al <= 0) return;
+      text(label, 330, y - 90, 36, C.ink, al, 900, "right");
+      const bins = new Array(30).fill(0), bw = .5; for (const w of S.s) bins[Math.min(29, Math.floor(w / bw))]++;
+      const tot = S.s.length;
+      bins.forEach((c, i) => { const n = Math.min(16, Math.round(c / tot * 110)); for (let k = 0; k < n; k++) { ctx.save(); ctx.globalAlpha = al * clamp((t - mk(mm) - .3 - i * .03) / .2); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(380 + i * 44, y - k * 15, 6, 0, 7); ctx.fill(); ctx.restore(); } });
+      num(`平均 ${S.m.toFixed(1)} 分钟`, 1760, y - 90, 32, C.ink, al, "right");
+      num(`最慢的 10%：超过 ${S.p90.toFixed(1)} 分钟`, 1760, y - 40, 28, col === C.gold ? C.ink : C.red, al, "right");
+    };
+    text("3 个收银台 · 同一批顾客 · 等待时间（分钟）", W / 2, 230, 30, C.gray, p2, 700);
+    draw(QSIM.split, 560, "分开排", "f_split", C.gray);
+    draw(QSIM.single, 860, "一条队", "f_single", C.gold);
+    for (let m = 0; m <= 14; m += 2) text(String(m), 380 + m / .5 * 44, 900, 22, C.gray, p2 * fade(t, mk("f_single"), 1e9), 500);
+    text("模拟：每分钟平均来 2.5 人，每人平均结账 1 分钟（随机）", W / 2, 950, 24, C.gray, p2, 500);
+    const fa = p2 * fade(t, mk("f_fair"), 1e9, .4);
+    text("先来先服务 · 没人越过你", 1400, 690, 32, C.red, fa, 900);
+  }
+  // 小办法
+  const p3 = a * fade(t, mk("f_tips") - .2, 1e9, .4);
+  if (p3 > 0) {
+    [["f_t1", "先数人头，再看购物车"], ["f_t2", "选好了就别频繁换队"], ["f_t3", "给自己找点事做"], ["f_t4", "旁边更快，是常态"]].forEach(([mm, s], i) => {
+      const al = p3 * fade(t, mk(mm), 1e9, .4), y = 330 + i * 150;
+      card(400, y - 60, 1120, 120, al);
+      num(String(i + 1), 470, y, 56, C.red, al);
+      text(s, 540, y, 48, C.ink, al, 900, "left");
+    });
+  }
+};
+SCN.end = (t, a) => {
+  const fin = at(t, "e_title", .8);
+  if (fin < 1) {
+    const al = a * (1 - fin);
+    // 你终于到收银台
+    for (let k = 0; k < 4; k++) person(LANE_X - 100 - k * 92, LANE_Y[1], 96, k === 0 ? C.red : C.gray, al);
+    register(LANE_X, LANE_Y[1], al);
+    for (let k = 0; k < 6; k++) person(LANE_X - 100 - k * 92 - ((t * 40) % 92), LANE_Y[0], 96, C.light, al * .7);
+    for (let k = 0; k < 6; k++) person(LANE_X - 100 - k * 92 - ((t * 30) % 92), LANE_Y[2], 96, C.light, al * .7);
+    const gd = fade(t, mk("e_good"), 1e9, .4);
+    if (gd > 0) { ctx.save(); ctx.globalAlpha = al * gd; ctx.fillStyle = C.gold; ctx.beginPath(); ctx.arc(LANE_X - 100, LANE_Y[1] - 150, 34, 0, 7); ctx.fill(); ctx.restore();
+      text("✓", LANE_X - 100, LANE_Y[1] - 150, 40, C.panel, al * gd, 900); }
+  }
+  if (fin > 0) {
+    for (let k = 0; k < 16; k++) person(160 + k * 108, 760, 70, k === 9 ? C.red : C.light, a * fin * .9);
+    text("为什么你排的队，总是最慢？", W / 2, 430, 84, C.ink, a * fin, 900);
+    text("Why Your Line Always Feels Slower", W / 2, 530, 36, C.red, a * fin, 700, NUM, 1);
+    text("概率 · 随机 · 注意力 · 记忆 · 时间感", W / 2, 610, 34, C.gray, a * fade(t, mk("e_title") + .8, 1e9), 700);
+  }
+};
+
+// ───────── 主绘制
+function draw(t) {
+  T = t;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  // 底部淡淡的地面条
+  ctx.fillStyle = C.bg2; ctx.fillRect(0, 940, W, 140);
+  for (const R of RUNS) {
+    const a = fade(t, R.t0 - .3, R.t1 + .35, .5);
+    if (a > 0) { ctx.save(); SCN[R.sc](t, a, R); ctx.restore(); }
+  }
+  // 章节进度（右上角）
+  const chapNow = RUNS.filter(R => R.sc === "chap" && R.t0 <= t).length;
+  if (chapNow > 0 && chapNow < 8) for (let k = 1; k <= 7; k++) {
+    ctx.save(); ctx.globalAlpha = .9; ctx.fillStyle = k === chapNow ? C.red : (k < chapNow ? C.ink : C.light);
+    ctx.beginPath(); ctx.arc(1600 + k * 34, 70, 9, 0, 7); ctx.fill(); ctx.restore();
+  }
+  // 关键词
+  let curK = null;
+  for (const R of RUNS) for (const e of R.es) if (e.k && t >= e.t0 - .1) {
+    const next = R.es.find(x => x.t0 > e.t0 && x.k), end = next ? next.t0 : R.t1;
+    if (t < end + .3) curK = [e.k, e.t0, end];
+  }
+  if (curK) text(curK[0], W / 2, 140, 76, C.ink, fade(t, curK[1], curK[2], .35), 900);
+  // 出处
+  for (const R of RUNS) R.es.forEach((e, i) => {
+    if (!e.n) return;
+    const nx = R.es.slice(i + 1).find(x => x.n), end = Math.min(nx ? nx.t0 : R.t1, e.t0 + 16);
+    text("出处 · " + e.n, 60, 960, 22, C.gray, fade(t, e.t0, end, .3), 500, "left");
+  });
+  // 字幕
+  for (const e of SCRIPT) {
+    if (!e.s) continue;
+    const al = fade(t, e.t0, e.t1, .15); if (al <= 0) continue;
+    ctx.save(); ctx.globalAlpha = al; ctx.font = `700 42px ${SANS}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineWidth = 10; ctx.lineJoin = "round"; ctx.strokeStyle = C.bg2; ctx.strokeText(e.s, W / 2, 1015);
+    ctx.fillStyle = C.ink; ctx.fillText(e.s, W / 2, 1015); ctx.restore();
+  }
+  const fk = 1 - Math.min(clamp(t / .5), clamp((END - t) / 1));
+  if (fk > 0) { ctx.fillStyle = `rgba(31,27,22,${fk})`; ctx.fillRect(0, 0, W, H); }
+}
+
+window.draw = draw; window.END = END;
+window.events = () => ({ marks: M, end: END, sim: SIM, q: { single: [QSIM.single.m, QSIM.single.sd, QSIM.single.p90], split: [QSIM.split.m, QSIM.split.sd, QSIM.split.p90] },
+  pages: RUNS.filter(R => R.sc === "chap").map(R => R.t0) });
+window.ready = document.fonts.ready.then(() => Promise.all([
+  document.fonts.load(`900 76px "Noto Sans SC"`, SCRIPT.map(e => (e.k || "") + (e.ch || "") + e.s).join("")),
+  document.fonts.load(`700 42px "Noto Sans SC"`, SCRIPT.map(e => e.s).join("")), document.fonts.load(`500 26px "Noto Sans SC"`, "出处示意模拟"),
+  document.fonts.load(`900 40px "Geist"`, "0123456789/"),
+])).then(() => true);
+</script></body></html>
