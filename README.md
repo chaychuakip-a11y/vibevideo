@@ -1,6 +1,6 @@
 # Vibe知识大赏 · 代码生成知识短片
 
-四个用代码逐帧渲染的中文知识短片（vibe-knowledge skill，基础档 0 积分）。每个文件夹里有：
+用代码逐帧渲染的中文知识短片（vibe-knowledge skill，基础档 0 积分）。每个文件夹里有：
 
 - `film.html` —— 整部片子：一个 canvas + `draw(t)` 函数，脚本表（字幕、关键词、出处、动画节点）在文件开头
 - `render.js` —— 用 Playwright 逐帧截取 canvas，输出 JPEG 帧
@@ -14,6 +14,7 @@
 | `battery/` | 手机电量 20% 为什么会关机 | 2:38 | 深色数学 |
 | `coin-debasement/` | 钱是怎么被动手脚的 · 第〇集 | 5:05（另有 15 秒样片） | 水墨纸本 |
 | `queue/` | 为什么你排的队总是最慢 | 10:51 | 象形统计（ISOTYPE） |
+| `water/` | 古代城市怎么喝上水 | 10:14 | 蓝图专利图（Blueprint） |
 
 ## 重新渲染
 

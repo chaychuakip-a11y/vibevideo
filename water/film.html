@@ -1,0 +1,796 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Geist+Mono:wght@500;700&family=Long+Cang&display=swap" rel="stylesheet">
+<style>html,body{margin:0;background:#123F74}canvas{display:block}</style>
+</head><body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// 古代城市怎么喝上水 · 完整版 · 蓝图专利图风格
+const W = 1920, H = 1080;
+const C = { bg: "#123F74", line: "#EAF2FF", dim: "rgba(234,242,255,.5)", faint: "rgba(234,242,255,.18)", water: "#7FD3FF", red: "#FF6B5B", earth: "rgba(234,242,255,.22)" };
+const SANS = '"Noto Sans SC", sans-serif', MONO = '"Geist Mono", "Noto Sans SC", monospace', PEN = '"Long Cang", "Noto Sans SC", cursive';
+const ctx = document.getElementById("c").getContext("2d");
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const ease = p => { p = clamp(p); return p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const ramp = (t, a, b) => ease((t - a) / (b - a));
+const fade = (t, a, b, d = 0.35) => clamp(Math.min((t - a) / d, (b - t) / d));
+let T = 0;
+
+// ───────── 脚本
+const SCRIPT = [
+  { sc: "hook", s: "拧开水龙头，水就来了", m: "h_tap", k: "拧开就有水" },
+  { sc: "hook", s: "可在一百多年前，世界上绝大多数城市还没有这样的水龙头", m: "h_before" },
+  { sc: "hook", s: "罗马、长安、北京……一座大城，动辄住着几十万人", m: "h_cities" },
+  { sc: "hook", s: "每个人每天都要喝水、做饭、洗东西", m: "h_daily" },
+  { sc: "hook", s: "这么多水，从哪儿来？又是怎么送到每家每户的？", m: "h_q", k: "水从哪儿来？" },
+  { sc: "title", s: "古代城市，怎么喝上水？", m: "t_title", d: 4.5 },
+  { sc: "title", s: "这期按办法来讲：往下挖、从远处引、存起来、抬上来", m: "t_sub" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "一  往下挖：井", no: 1 },
+  { sc: "well", s: "最古老、也最常见的办法，是挖井", m: "w_start", k: "挖井" },
+  { sc: "well", s: "雨水和河水会慢慢渗进地下，存在土层和砂石的缝隙里", m: "w_seep" },
+  { sc: "well", s: "这层含水的土石叫含水层，水面的高度叫地下水位", m: "w_aquifer", k: "含水层 · 地下水位" },
+  { sc: "well", s: "只要井挖得比地下水位更深，井底就会渗出水来", m: "w_deep" },
+  { sc: "well", s: "井壁常用砖石砌起来，防止塌方，也让水更干净", m: "w_brick" },
+  { sc: "well", s: "再架上辘轳，摇着绳子把水桶提上来", m: "w_lulu", k: "辘轳" },
+  { sc: "well", s: "大约四千五百年前，印度河流域的摩亨佐-达罗，就是一座“井城”", m: "w_mohen", k: "摩亨佐-达罗", n: "Kenoyer、Jansen 等的研究，见 harappa.com" },
+  { sc: "well", s: "考古学家根据已发掘部分估算，全城可能有七百多口井", m: "w_700" },
+  { sc: "well", s: "很多井就在自家院子里，也有一些公共井开在街边", m: "w_public" },
+  { sc: "well", s: "街道下面，还有砖砌的排水沟，把脏水送走", m: "w_drain" },
+  { sc: "well", s: "在中国，井也一直是城市生活的中心", m: "w_china", k: "井与城市" },
+  { sc: "well", s: "唐代长安，宫廷和各个坊里，到处都是井", m: "w_changan", n: "《人民论坛》2025：隋唐长安以渠水为主，井水广布宫廷与坊里" },
+  { sc: "well", s: "但井也有麻烦：水量有限，旱年会干，水质也看运气", m: "w_problem", k: "井的麻烦" },
+  { sc: "well", s: "明清的北京，大多数井打出来的是又苦又咸的“苦水”", m: "w_bitter", n: "赵珍、魏晋：《清代京城卖水业与饮用水调控》" },
+  { sc: "well", s: "能喝的甜水井很少，甜水就成了要花钱买的东西", m: "w_sweet" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "二  从远处引：渠和引水道", no: 2 },
+  { sc: "aq", s: "附近的井不够用，就得把远处的水引过来", m: "a_start", k: "把远处的水引过来" },
+  { sc: "aq", s: "古代没有水泵，水只会往低处流", m: "a_gravity", k: "只靠重力" },
+  { sc: "aq", s: "所以关键在于：从水源到城市，要一路保持一点点往下的坡度", m: "a_slope" },
+  { sc: "aq", s: "以法国南部尼姆的罗马引水道为例", m: "a_nimes", k: "尼姆引水道", n: "尼姆引水道与加尔桥：Wikipedia、Structurae 等" },
+  { sc: "aq", s: "它从大约 50 公里外的泉水出发，平均坡度只有约三千分之一", m: "a_50" },
+  { sc: "aq", s: "也就是每走一公里，只下降三十多厘米", m: "a_33", k: "每公里只降三十多厘米" },
+  { sc: "aq", s: "遇到山就挖隧道，遇到低洼就埋在地下，或者用拱桥架过去", m: "a_route" },
+  { sc: "aq", s: "横跨加尔东河的那座三层拱桥，就是有名的加尔桥", m: "a_pont", k: "加尔桥" },
+  { sc: "aq", s: "桥上这段水渠长四百多米，前后只下降了大约 2.5 厘米", m: "a_bridge" },
+  { sc: "aq", s: "这样的工程，比罗马更早就有人做过", m: "a_earlier" },
+  { sc: "aq", s: "公元前 700 年前后，亚述国王辛那赫里布为都城尼尼微修建引水工程", m: "a_jerwan", k: "更早的引水桥", n: "Columbia MCID：Jerwan Aqueduct（约前 703—前 690 年）" },
+  { sc: "aq", s: "其中杰尔万的石砌水道桥，常被认为是已知最古老的引水桥", m: "a_oldest" },
+  { sc: "aq", s: "水进了罗马城，又是怎么分出去的？", m: "a_rome", k: "罗马城里的分水" },
+  { sc: "aq", s: "公元一世纪末，罗马的水务长官弗朗提努斯写过一份报告", m: "a_front", n: "Frontinus《De aquaeductu》，约公元 97 年" },
+  { sc: "aq", s: "他记录了当时九条引水道的情况，以及水是怎么分配的", m: "a_nine" },
+  { sc: "aq", s: "引水道先进入分水池，再分成几路：公共水池、浴场、作坊和少数私人住宅", m: "a_castellum" },
+  { sc: "aq", s: "据一项研究估算，城里约 13% 的水流向公共水池，而几乎所有普通人都靠它们取水", m: "a_lacus", n: "Evans 1994 的估算（Bryn Mawr Classical Review 书评转述）" },
+  { sc: "aq", s: "在中国，唐代长安也从城外引来多条渠水", m: "a_changan", k: "长安的渠" },
+  { sc: "aq", s: "龙首渠、永安渠、清明渠流进城里，主要供宫苑、池塘和园林", m: "a_canals" },
+  { sc: "aq", s: "普通居民喝的水，更多还是靠坊里的井", m: "a_wells" },
+  { sc: "aq", s: "元代，郭守敬又从昌平白浮泉引水，经瓮山泊流进大都城", m: "a_guo", n: "北京水利遗产资料：白浮泉引水，约 1292 年完工" },
+  { sc: "aq", s: "这条水道既给城市补水，也撑起了运河漕运", m: "a_canal" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "三  在地下走：坎儿井与隧道", no: 3 },
+  { sc: "qanat", s: "在干旱的地方，水在地面上走，很快就会被晒干", m: "q_start", k: "让水在地下走" },
+  { sc: "qanat", s: "于是古代伊朗人想出了一个办法：坎儿井，也叫卡纳特", m: "q_name" },
+  { sc: "qanat", s: "先在山脚的冲积扇上，挖一口很深的“母井”，挖到地下水位以下", m: "q_mother" },
+  { sc: "qanat", s: "再挖一条坡度很缓的地下隧道，让水自己流出来", m: "q_tunnel", k: "缓坡暗渠" },
+  { sc: "qanat", s: "每隔二三十米挖一口竖井，用来运土、通风，以后清淤也从这里下去", m: "q_shafts", n: "UNESCO：Persian Qanat（2016 年列入世界遗产）" },
+  { sc: "qanat", s: "深的竖井能到一两百米，隧道的坡度常在千分之一左右", m: "q_depth" },
+  { sc: "qanat", s: "水在地下流，不怕蒸发，最后从出口流进水池，供村镇和田地使用", m: "q_out" },
+  { sc: "qanat", s: "伊朗至今还有很多坎儿井在用，2016 年被列入世界遗产", m: "q_unesco" },
+  { sc: "qanat", s: "新疆吐鲁番的坎儿井，由竖井、暗渠、明渠和涝坝四部分组成", m: "q_turpan", k: "吐鲁番坎儿井", n: "人民网、央视新闻：吐鲁番坎儿井暗渠总长 3200 多公里" },
+  { sc: "qanat", s: "那里的暗渠加起来，有三千二百多公里", m: "q_3200" },
+  { sc: "qanat", s: "古希腊人也挖过供水隧道", m: "q_greek", k: "从两头挖" },
+  { sc: "qanat", s: "公元前六世纪，萨摩斯岛的欧帕利诺斯，让人从山的两头同时开挖", m: "q_eup", n: "Tunnel of Eupalinos，萨摩斯岛（Wikipedia 等）" },
+  { sc: "qanat", s: "两队人在山肚子里会合，挖出一条一千多米的隧道，把泉水送进城", m: "q_meet" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "四  存起来：蓄水池", no: 4 },
+  { sc: "cis", s: "引来的水不一定时时都够，聪明的城市会把水存起来", m: "c_start", k: "存起来" },
+  { sc: "cis", s: "君士坦丁堡的地下水宫，就是一座巨大的蓄水池", m: "c_basilica", k: "地下水宫", n: "Basilica Cistern（伊斯坦布尔）资料：约 532 年，查士丁尼时期" },
+  { sc: "cis", s: "它大约建于公元 532 年，由 336 根石柱撑起拱顶", m: "c_336" },
+  { sc: "cis", s: "12 排，每排 28 根，不少柱子是从旧建筑里搬来的", m: "c_rows" },
+  { sc: "cis", s: "据估计能存约 8 万立方米水，相当于三十多个标准泳池", m: "c_80k" },
+  { sc: "cis", s: "平时由引水道慢慢注满，遇到旱季或者被围城，就是全城的后备水源", m: "c_reserve" },
+  { sc: "cis", s: "在印度西部，人们把井修成了一座向下的“宫殿”：阶梯井", m: "c_step", k: "阶梯井" },
+  { sc: "cis", s: "地下水位一年里有涨有落，台阶让人在任何季节都能走到水边", m: "c_levels" },
+  { sc: "cis", s: "古吉拉特邦的女王阶梯井建于 11 世纪，2014 年被列入世界遗产", m: "c_rani", n: "UNESCO：Rani-ki-Vav（2014 年列入世界遗产）" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "五  抬上来：水车", no: 5 },
+  { sc: "lift", s: "如果水在低处，城市在高处呢？", m: "l_start", k: "把水抬上来" },
+  { sc: "lift", s: "没有水泵的年代，就得借河水自己的力气", m: "l_river" },
+  { sc: "lift", s: "叙利亚的哈马城，在奥龙特斯河上架起了巨大的木制水车", m: "l_hama", k: "哈马水车", n: "Norias of Hama（Wikipedia 等）" },
+  { sc: "lift", s: "河水推着轮子转，轮子边上的水斗在河里舀满水", m: "l_turn" },
+  { sc: "lift", s: "转到最高处，把水倒进高架的水渠，再流向田地、花园和房屋", m: "l_dump" },
+  { sc: "lift", s: "那里曾有三十多架这样的水车，如今还留下 17 架", m: "l_17" },
+  { sc: "lift", s: "不过总的来说，把水抬高非常费力，所以古代供水大多尽量依靠重力", m: "l_hard" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "六  最后一段路：普通人怎么拿到水", no: 6 },
+  { sc: "life", s: "水到了城里，离你家还有最后一段路", m: "d_start", k: "最后一段路" },
+  { sc: "life", s: "在罗马，大多数人去街边的公共水池打水", m: "d_rome" },
+  { sc: "life", s: "住在公寓楼上层的人，家里没有水管，只能一罐一罐提上楼", m: "d_up", k: "一罐一罐提上楼", n: "Insula（罗马公寓）相关研究：上层住户多依赖公共水池" },
+  { sc: "life", s: "也有人雇送水的人代劳", m: "d_carrier" },
+  { sc: "life", s: "唐代杭州，刺史李泌想办法把西湖水引进城里", m: "d_hz", k: "杭州六井", n: "杭州日报、新华网相关报道；苏轼《钱塘六井记》" },
+  { sc: "life", s: "用管道把湖水接到城里六处出水口，人称“六井”", m: "d_six" },
+  { sc: "life", s: "大约三百年后，苏轼协助知州陈襄修井，把容易坏的竹管换成了瓦管", m: "d_su" },
+  { sc: "life", s: "在明清北京，甜水要花钱买，送水成了一门生意", m: "d_bj", k: "北京的送水人" },
+  { sc: "life", s: "水夫推着独轮车，把一桶桶水送到各家门口", m: "d_cart" },
+  { sc: "life", s: "清代还出现了“水窝子”：水夫分段把持水井，居民不能随便自己去打", m: "d_wozi", n: "中研院相关研究：清代北京的“水窝子”与山东水夫" },
+  { sc: "life", s: "对普通人来说，水意味着每天的体力和时间", m: "d_cost", k: "水和日常生活" },
+  { sc: "life", s: "井边和水池边，也是邻居们碰面、聊天的地方", m: "d_social" },
+  { sc: "life", s: "水质不好会带来疾病；水源一旦被切断，整座城都可能撑不住", m: "d_risk" },
+  { sc: "life", s: "渠道、隧道和水池都要年年清淤维护，一旦荒废，城市也会跟着衰落", m: "d_maint" },
+
+  { sc: "chap", s: "", d: 2.8, ch: "七  总结", no: 7 },
+  { sc: "sum", s: "回头看，古代城市取水，其实就是这几种办法", m: "s_start", k: "四种办法" },
+  { sc: "sum", s: "往下挖：井、阶梯井、坎儿井", m: "s_1" },
+  { sc: "sum", s: "从远处引：渠道、引水道、水道桥", m: "s_2" },
+  { sc: "sum", s: "存起来：蓄水池", m: "s_3" },
+  { sc: "sum", s: "抬上来：水车", m: "s_4" },
+  { sc: "sum", s: "再加上最后一段路上，挑水和送水的人", m: "s_5" },
+  { sc: "sum", s: "一座城市，往往要把几种办法配合起来用", m: "s_combo" },
+  { sc: "sum", s: "北京直到 1908 年，才开始筹办第一家自来水公司", m: "s_1908", k: "1908 年", n: "北京自来水博物馆资料" },
+  { sc: "sum", s: "在那之前的几千年里，每一口水，都要靠这些办法送到人们手里", m: "s_before" },
+  { sc: "end", s: "下次拧开水龙头，不妨想一想", m: "e_start" },
+  { sc: "end", s: "一座古城，要挖多少口井、修多长的渠，才能让人喝上一口水", m: "e_think" },
+  { sc: "end", s: "古代城市，怎么喝上水？", m: "e_title" },
+  { sc: "end", s: "你的家乡以前喝井水、河水，还是泉水？评论区说说", m: "e_cta", d: 6 },
+];
+const M = {}, RUNS = [];
+{
+  let t = 0.6;
+  for (const e of SCRIPT) {
+    const n = [...e.s.replace(/\s/g, "")].length;
+    e.dur = e.d || clamp(n / 4.6 + 1.0, 2.8, 8.5);
+    e.t0 = t; e.t1 = t + e.dur; t = e.t1 + 0.15;
+    if (e.m) M[e.m] = e.t0;
+    const last = RUNS[RUNS.length - 1];
+    if (!last || last.sc !== e.sc || e.sc === "chap") RUNS.push({ sc: e.sc, t0: e.t0, t1: e.t1, es: [e] });
+    else { last.t1 = e.t1; last.es.push(e); }
+  }
+}
+const END = Math.ceil(SCRIPT[SCRIPT.length - 1].t1 + 1.5);
+const mk = name => M[name] ?? 1e9;
+const at = (t, name, d = .8) => ramp(t, mk(name), mk(name) + d);
+const seg = (t, a, b, d = .4) => fade(t, mk(a) - .2, b ? mk(b) : 1e9, d);   // 某段从节点 a 显示到节点 b
+
+// ───────── 蓝图工具
+function text(str, x, y, size, col, alpha, weight = 700, align = "center", font = SANS, spacing = 1) {
+  if (alpha <= 0 || str === "" || str == null) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = col;
+  ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = "middle"; ctx.letterSpacing = spacing + "px";
+  ctx.fillText(str, x, y); ctx.restore();
+}
+const mono = (s, x, y, size, col, a, align = "center") => text(s, x, y, size, col, a, 700, align, MONO, 0);
+const pen = (s, x, y, size, a, align = "center", rot = -.03) => { if (a <= 0) return; ctx.save(); ctx.translate(x, y); ctx.rotate(rot); text(s, 0, 0, size, C.red, a, 400, align, PEN, 0); ctx.restore(); };
+const label = (s, x, y, a, align = "left", size = 28) => text(s, x, y, size, C.line, a, 700, align);
+function polyLen(p) { let L = 0; for (let i = 1; i < p.length; i++) L += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]); return L; }
+// 按进度画折线（“出图”效果）
+function pdraw(p, prog, w = 3, col = C.line, alpha = 1, dash = null) {
+  if (alpha <= 0 || prog <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  if (dash) ctx.setLineDash(dash);
+  const L = polyLen(p) * clamp(prog); let acc = 0;
+  ctx.beginPath(); ctx.moveTo(...p[0]);
+  for (let i = 1; i < p.length; i++) {
+    const s = Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]);
+    if (acc + s >= L) { const q = (L - acc) / s; ctx.lineTo(lerp(p[i - 1][0], p[i][0], q), lerp(p[i - 1][1], p[i][1], q)); break; }
+    ctx.lineTo(...p[i]); acc += s;
+  }
+  ctx.stroke(); ctx.restore();
+}
+// 水流：沿路径流动的青色虚线
+function flow(p, alpha, w = 8, speed = 70, prog = 1) {
+  if (alpha <= 0) return;
+  pdraw(p, prog, w + 6, "rgba(127,211,255,.25)", alpha);
+  ctx.save(); ctx.setLineDash([22, 16]); ctx.lineDashOffset = -T * speed; ctx.restore();
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.strokeStyle = C.water; ctx.lineWidth = w; ctx.lineCap = "round"; ctx.setLineDash([22, 16]); ctx.lineDashOffset = -T * speed;
+  const L = polyLen(p) * clamp(prog); let acc = 0; ctx.beginPath(); ctx.moveTo(...p[0]);
+  for (let i = 1; i < p.length; i++) { const s = Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]); if (acc + s >= L) { const q = (L - acc) / s; ctx.lineTo(lerp(p[i - 1][0], p[i][0], q), lerp(p[i - 1][1], p[i][1], q)); break; } ctx.lineTo(...p[i]); acc += s; }
+  ctx.stroke(); ctx.restore();
+}
+function waterRect(x, y, w, h, alpha) {
+  if (alpha <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = "rgba(127,211,255,.35)"; ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = C.water; ctx.lineWidth = 3; ctx.beginPath();
+  for (let i = 0; i <= 20; i++) { const xx = x + w * i / 20, yy = y + Math.sin(i * .9 + T * 3) * 3; i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); }
+  ctx.stroke(); ctx.restore();
+}
+// 剖面土层排线
+function hatch(x, y, w, h, alpha, gap = 22) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.strokeStyle = C.earth; ctx.lineWidth = 2;
+  for (let k = -h; k < w; k += gap) { ctx.beginPath(); ctx.moveTo(x + k, y + h); ctx.lineTo(x + k + h, y); ctx.stroke(); }
+  ctx.restore();
+}
+function dots(x, y, w, h, alpha) {   // 含水层：点
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = "rgba(127,211,255,.55)";
+  for (let i = 0; i < w * h / 900; i++) { const px = x + ((i * 97) % w), py = y + ((i * 61) % h); ctx.beginPath(); ctx.arc(px, py, 2.4, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+// 尺寸线
+function dim(x1, y1, x2, y2, str, alpha, off = 0) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.strokeStyle = C.line; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  const an = Math.atan2(y2 - y1, x2 - x1);
+  for (const [x, y, d] of [[x1, y1, 1], [x2, y2, -1]]) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + d * 14 * Math.cos(an - .35), y + d * 14 * Math.sin(an - .35)); ctx.moveTo(x, y); ctx.lineTo(x + d * 14 * Math.cos(an + .35), y + d * 14 * Math.sin(an + .35)); ctx.stroke(); }
+  ctx.restore();
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  if (Math.abs(y2 - y1) > Math.abs(x2 - x1)) { if (off < 0) mono(str, mx - 14, my, 26, C.line, alpha, "right"); else mono(str, mx + 14 + off, my, 26, C.line, alpha, "left"); } else mono(str, mx, my - 22 + off, 26, C.line, alpha);
+}
+// 红铅笔圈
+function circ(x, y, rx, ry, prog, alpha = 1) {
+  if (alpha <= 0 || prog <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.strokeStyle = C.red; ctx.lineWidth = 4; ctx.lineCap = "round"; ctx.beginPath();
+  const n = 60 * clamp(prog) * 1.1;
+  for (let i = 0; i <= n; i++) { const a = -1.9 + i / 60 * Math.PI * 2, wob = 1 + Math.sin(i * .7) * .03; const px = x + Math.cos(a) * rx * wob, py = y + Math.sin(a) * ry * wob; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+  ctx.stroke(); ctx.restore();
+}
+// 图签（右下角）
+function tblock(fig, place, era, alpha) {
+  if (alpha <= 0) return;
+  const x = 1470, y = 820, w = 400, h = 120;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = "rgba(18,63,116,.92)"; ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+  ctx.beginPath(); ctx.moveTo(x, y + 40); ctx.lineTo(x + w, y + 40); ctx.moveTo(x + 110, y); ctx.lineTo(x + 110, y + h); ctx.moveTo(x + 110, y + 80); ctx.lineTo(x + w, y + 80); ctx.stroke(); ctx.restore();
+  mono("FIG.", x + 55, y + 20, 22, C.dim, alpha); mono(fig, x + 55, y + 80, 44, C.line, alpha);
+  text(place, x + 128, y + 20, 22, C.line, alpha, 700, "left"); mono("地点 · PLACE", x + w - 12, y + 20, 14, C.dim, alpha, "right");
+  text(era, x + 128, y + 60, 22, C.line, alpha, 700, "left"); mono("年代 · ERA", x + w - 12, y + 60, 14, C.dim, alpha, "right");
+  mono("SHEET 古代城市供水", x + 128, y + 100, 16, C.dim, alpha, "left");
+}
+// 线描小人；o.yoke 挑担，o.jar 提罐
+function person(x, y, s, alpha, o = {}) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.scale(s, s); ctx.strokeStyle = C.line; ctx.lineWidth = 4 / s * Math.min(1, s * 1.2); ctx.lineCap = "round";
+  const step = o.walk ? Math.sin(T * 6 + (o.ph || 0)) * 12 : 0;
+  ctx.beginPath(); ctx.arc(0, -86, 12, 0, 7); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, -74); ctx.lineTo(0, -34); ctx.lineTo(-10 - step, 0); ctx.moveTo(0, -34); ctx.lineTo(10 + step, 0); ctx.stroke();
+  if (o.yoke) { ctx.beginPath(); ctx.moveTo(-46, -70); ctx.lineTo(46, -70); ctx.moveTo(-40, -70); ctx.lineTo(-40, -40); ctx.moveTo(40, -70); ctx.lineTo(40, -40); ctx.stroke();
+    ctx.strokeRect(-52, -40, 24, 26); ctx.strokeRect(28, -40, 24, 26); ctx.beginPath(); ctx.moveTo(0, -64); ctx.lineTo(-20, -70); ctx.moveTo(0, -64); ctx.lineTo(20, -70); ctx.stroke(); }
+  else if (o.jar) { ctx.beginPath(); ctx.moveTo(0, -64); ctx.lineTo(16, -50); ctx.stroke(); ctx.beginPath(); ctx.ellipse(24, -36, 12, 18, 0, 0, 7); ctx.stroke(); }
+  else { ctx.beginPath(); ctx.moveTo(0, -64); ctx.lineTo(-18, -44); ctx.moveTo(0, -64); ctx.lineTo(18, -44); ctx.stroke(); }
+  ctx.restore();
+}
+function wellIcon(x, y, s, alpha, col = C.line) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.scale(s, s); ctx.strokeStyle = col; ctx.lineWidth = 3;
+  ctx.strokeRect(-24, -20, 48, 20); ctx.beginPath(); ctx.moveTo(-20, -20); ctx.lineTo(-20, -52); ctx.moveTo(20, -20); ctx.lineTo(20, -52); ctx.moveTo(-28, -52); ctx.lineTo(28, -52); ctx.stroke();
+  ctx.fillStyle = "rgba(127,211,255,.6)"; ctx.fillRect(-20, -14, 40, 10); ctx.restore();
+}
+function arches(x0, y0, n, w, h, alpha, prog = 1) {   // 一层拱
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.strokeStyle = C.line; ctx.lineWidth = 3;
+  const m = Math.ceil(n * clamp(prog));
+  for (let i = 0; i < m; i++) { const x = x0 + i * w; ctx.beginPath(); ctx.moveTo(x, y0 + h); ctx.lineTo(x, y0 + w * .5); ctx.arc(x + w / 2, y0 + w * .5, w / 2 - 4, Math.PI, 0); ctx.lineTo(x + w, y0 + h); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + m * w, y0); ctx.stroke(); ctx.restore();
+}
+
+// ───────── 场景
+const SCN = {};
+SCN.hook = (t, a) => {
+  // 水龙头
+  const p1 = a * seg(t, "h_tap", "h_cities");
+  if (p1 > 0) {
+    const x = 760, y = 380;
+    pdraw([[x - 200, y], [x + 40, y], [x + 40, y + 80]], at(t, "h_tap", 1), 10, C.line, p1);
+    pdraw([[x - 40, y], [x - 40, y - 60], [x - 90, y - 60]], at(t, "h_tap", 1), 8, C.line, p1);
+    flow([[x + 40, y + 90], [x + 40, y + 360]], p1 * at(t, "h_tap", 1.2), 14, 160);
+    const cross = at(t, "h_before", .8);
+    pdraw([[x - 230, y - 120], [x + 160, y + 400]], cross, 8, C.red, p1); pdraw([[x + 160, y - 120], [x - 230, y + 400]], cross, 8, C.red, p1);
+    pen("一百多年前：没有", x + 260, y + 120, 64, p1 * cross, "left");
+  }
+  // 城市轮廓 + 许多人 + 问号
+  const p2 = a * seg(t, "h_cities");
+  if (p2 > 0) {
+    const pr = at(t, "h_cities", 1.6);
+    pdraw([[360, 760], [360, 400], [1560, 400], [1560, 760], [360, 760]], pr, 4, C.line, p2);
+    for (let i = 0; i < 9; i++) { const bx = 420 + i * 125, bh = 80 + ((i * 53) % 120); pdraw([[bx, 760], [bx, 760 - bh], [bx + 90, 760 - bh], [bx + 90, 760]], ramp(t, mk("h_cities") + .4 + i * .08, mk("h_cities") + 1 + i * .08), 3, C.dim, p2); }
+    for (let k = 0; k < 14; k++) person(420 + k * 80, 860, .55, p2 * fade(t, mk("h_daily") + k * .05, 1e9, .3), { walk: true, ph: k, yoke: k % 3 === 0 });
+    pen("?", 960, 520, 220, p2 * at(t, "h_q", .6), "center", .05);
+  }
+};
+SCN.title = (t, a) => {
+  // 一滴水被“出图”
+  const cx = W / 2, cy = 400, pr = at(t, "t_title", 1.4);
+  const drop = []; for (let i = 0; i <= 60; i++) { const an = i / 60 * Math.PI * 2; const r = 90; drop.push([cx + Math.sin(an) * r * (1 - Math.cos(an)) * .62, cy + 40 - Math.cos(an) * r * 1.25]); }
+  pdraw(drop, pr, 6, C.water, a);
+  pdraw([[cx - 600, cy + 200], [cx + 600, cy + 200]], pr, 2, C.dim, a, [8, 8]);
+  text("古代城市，怎么喝上水？", cx, 660, 92, C.line, a * fade(t, mk("t_title") + .4, 1e9), 900);
+  mono("HOW ANCIENT CITIES GOT THEIR WATER", cx, 750, 34, C.water, a * fade(t, mk("t_title") + .9, 1e9));
+  const items = ["往下挖", "从远处引", "存起来", "抬上来"];
+  items.forEach((s, i) => text(s, cx + (i - 1.5) * 260, 850, 40, C.line, a * fade(t, mk("t_sub") + .5 + i * .5, 1e9, .3), 900));
+};
+SCN.chap = (t, a, R) => {
+  const e = R.es[0];
+  mono(`PART ${String(e.no).padStart(2, "0")}`, W / 2, 400, 34, C.water, a);
+  text(e.ch, W / 2, 510, 84, C.line, a, 900);
+  pdraw([[W / 2 - 420, 600], [W / 2 + 420, 600]], ramp(t, R.t0 + .2, R.t0 + 1.2), 3, C.red, a);
+};
+// 一 井：剖面 → 摩亨佐-达罗平面 → 长安/北京
+SCN.well = (t, a) => {
+  const p1 = a * seg(t, "w_start", "w_mohen");
+  if (p1 > 0) {
+    const G = 430, WT = 680, wx = 900;
+    pdraw([[200, G], [1720, G]], at(t, "w_start", 1), 4, C.line, p1);
+    hatch(200, G, 1520, WT - G, p1 * at(t, "w_start", 1));
+    // 雨水下渗
+    const sp = p1 * seg(t, "w_seep", "w_deep");
+    for (let k = 0; k < 12; k++) { const x = 260 + k * 120, ph = ((t * .5 + k * .13) % 1); ctx.save(); ctx.globalAlpha = sp * (1 - ph); ctx.fillStyle = C.water; ctx.beginPath(); ctx.arc(x, lerp(G - 120, WT, ph), 6, 0, 7); ctx.fill(); ctx.restore(); }
+    const aq = p1 * at(t, "w_aquifer");
+    dots(200, WT, 1520, 120, aq); pdraw([[200, WT], [1720, WT]], aq, 3, C.water, p1, [14, 10]);
+    label("含水层", 1560, WT + 80, aq); label("地下水位", 1560, WT - 26, aq);
+    // 井筒
+    const dp = at(t, "w_deep", 1.6);
+    const wb = WT + 80;
+    ctx.save(); ctx.globalAlpha = p1 * (dp > 0 ? 1 : 0); ctx.fillStyle = C.bg; ctx.fillRect(wx - 50, G, 100, (wb - G) * dp); ctx.restore();
+    pdraw([[wx - 50, G], [wx - 50, wb]], dp, 4, C.line, p1); pdraw([[wx + 50, G], [wx + 50, wb]], dp, 4, C.line, p1);
+    if (dp >= 1) waterRect(wx - 48, WT + 6, 96, wb - WT - 6, p1 * at(t, "w_deep", 2.4));
+    // 砖
+    const bk = p1 * at(t, "w_brick");
+    if (bk > 0) for (let r = 0; r < (wb - G) / 24; r++) for (const sx of [-1, 1]) { ctx.save(); ctx.globalAlpha = bk; ctx.strokeStyle = C.dim; ctx.lineWidth = 2; ctx.strokeRect(wx + sx * 50 - (sx > 0 ? 0 : 22), G + r * 24, 22, 24); ctx.restore(); }
+    label("砖砌井壁", wx + 90, 480, bk);
+    // 辘轳
+    const lu = p1 * at(t, "w_lulu");
+    if (lu > 0) {
+      pdraw([[wx - 90, G], [wx - 90, G - 200]], 1, 5, C.line, lu); pdraw([[wx + 90, G], [wx + 90, G - 200]], 1, 5, C.line, lu);
+      ctx.save(); ctx.globalAlpha = lu; ctx.strokeStyle = C.line; ctx.lineWidth = 4; ctx.strokeRect(wx - 90, G - 214, 180, 28);
+      const crank = T * 2.2; ctx.beginPath(); ctx.moveTo(wx + 90, G - 200); ctx.lineTo(wx + 90 + Math.cos(crank) * 50, G - 200 + Math.sin(crank) * 50); ctx.stroke(); ctx.restore();
+      const by = lerp(G - 150, WT + 30, .5 + .5 * Math.sin(T * .9));
+      pdraw([[wx, G - 186], [wx, by]], 1, 2, C.line, lu);
+      ctx.save(); ctx.globalAlpha = lu; ctx.strokeStyle = C.line; ctx.lineWidth = 3; ctx.strokeRect(wx - 18, by, 36, 34); ctx.restore();
+      label("辘轳", wx + 120, G - 200, lu); person(wx + 200, G, .9, lu);
+    }
+    tblock("1", "通用剖面", "—", p1 * fade(t, mk("w_aquifer"), 1e9));
+  }
+  // 摩亨佐-达罗：平面图，七百多口井的点 + 排水沟
+  const p2 = a * seg(t, "w_mohen", "w_china");
+  if (p2 > 0) {
+    const ox = 330, oy = 260, bw = 1260, bh = 560;
+    pdraw([[ox, oy], [ox + bw, oy], [ox + bw, oy + bh], [ox, oy + bh], [ox, oy]], at(t, "w_mohen", 1.2), 3, C.line, p2);
+    for (let i = 1; i < 6; i++) pdraw([[ox + i * bw / 6, oy], [ox + i * bw / 6, oy + bh]], at(t, "w_mohen", 1.4), 2, C.dim, p2);
+    for (let j = 1; j < 4; j++) pdraw([[ox, oy + j * bh / 4], [ox + bw, oy + j * bh / 4]], at(t, "w_mohen", 1.4), 2, C.dim, p2);
+    const n = Math.round(140 * at(t, "w_700", 2.5));
+    for (let i = 0; i < n; i++) { const x = ox + 20 + ((i * 137) % (bw - 40)), y = oy + 20 + ((i * 89) % (bh - 40)); ctx.save(); ctx.globalAlpha = p2; ctx.fillStyle = C.water; ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill(); ctx.restore(); }
+    mono(`${Math.round(700 * at(t, "w_700", 2.5))}+`, ox + bw - 20, oy - 40, 54, C.water, p2 * fade(t, mk("w_700"), 1e9), "right");
+    pen("估算：七百多口井（每点约代表 5 口）", ox, oy - 40, 40, p2 * fade(t, mk("w_700") + .8, 1e9), "left");
+    const pub = p2 * at(t, "w_public"); circ(ox + bw / 6 * 2, oy + bh / 4 * 2, 40, 40, pub); pen("街边公共井", ox + bw / 6 * 2 + 60, oy + bh / 4 * 2 - 40, 36, pub, "left");
+    const dr = p2 * at(t, "w_drain", 1.2);
+    for (let j = 1; j < 4; j++) flow([[ox, oy + j * bh / 4 + 10], [ox + bw, oy + j * bh / 4 + 10]], dr * .7, 4, 40, dr);
+    label("砖砌排水沟", ox + bw - 200, oy + bh + 40, dr);
+    tblock("2", "摩亨佐-达罗", "约前 2500 年", p2);
+  }
+  // 中国：长安的坊与井 → 北京苦水 / 甜水
+  const p3 = a * seg(t, "w_china");
+  if (p3 > 0) {
+    const ox = 380, oy = 270;
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 8; c++) {
+      const x = ox + c * 145, y = oy + r * 135, al = p3 * fade(t, mk("w_china") + (r * 8 + c) * .02, 1e9, .3);
+      ctx.save(); ctx.globalAlpha = al; ctx.strokeStyle = C.dim; ctx.lineWidth = 2; ctx.strokeRect(x, y, 125, 115); ctx.restore();
+      const bitter = (r * 8 + c) % 9 !== 4;
+      const pb = at(t, "w_bitter");
+      wellIcon(x + 62, y + 80, .9, al * at(t, "w_changan", .6), pb > .5 && bitter ? C.dim : C.line);
+      if (pb > 0) text(bitter ? "苦" : "甜", x + 62, y + 22, 26, bitter ? C.red : C.water, al * pb, 900);
+    }
+    label("坊", ox - 30, oy + 60, p3, "right");
+    pen("甜水井很少 → 甜水要花钱买", ox + 560, oy + 590, 44, p3 * at(t, "w_sweet"), "center");
+    const pr = p3 * fade(t, mk("w_problem"), mk("w_bitter"), .4);
+    pen("水量有限 · 旱年会干 · 水质看运气", ox + 560, oy - 50, 44, pr, "center");
+    tblock("3", "长安 / 北京", "唐 · 明清", p3);
+  }
+};
+// 二 引水：纵剖面 → 加尔桥 → 杰尔万 → 罗马分水 → 长安 / 大都
+SCN.aq = (t, a) => {
+  // 重力与坡度：一条长剖面
+  const p1 = a * seg(t, "a_start", "a_pont");
+  if (p1 > 0) {
+    const route = [[220, 330], [430, 360], [620, 420], [820, 470], [1020, 470], [1260, 520], [1500, 560], [1700, 600]];
+    // 地形
+    const terrain = [[180, 300], [300, 330], [480, 300], [640, 420], [760, 560], [840, 700], [1000, 700], [1080, 560], [1260, 560], [1500, 600], [1740, 640]];
+    pdraw(terrain, at(t, "a_start", 1.4), 3, C.dim, p1);
+    // 水源与城市
+    text("泉水", 220, 280, 30, C.water, p1, 900); text("城市", 1700, 550, 30, C.line, p1, 900);
+    pdraw([[1640, 640], [1640, 590], [1760, 590], [1760, 640]], 1, 3, C.line, p1 * fade(t, mk("a_start"), 1e9));
+    pdraw(route, at(t, "a_gravity", 2), 5, C.line, p1);
+    flow(route, p1 * at(t, "a_gravity", 2.5), 6, 60, at(t, "a_gravity", 2.5));
+    // 拱桥段（低洼处）
+    const rt = p1 * at(t, "a_route", 1);
+    arches(840, 470, 6, 30, 230, rt, at(t, "a_route", 1.4));
+    label("拱桥", 900, 440, rt); label("隧道 / 地下", 560, 470, rt);
+    pdraw([[480, 300], [640, 420]], 1, 3, C.dim, rt * .0);
+    // 尺寸
+    const d50 = p1 * at(t, "a_50", .6);
+    dim(220, 760, 1700, 760, "≈ 50 km", d50);
+    dim(1800, 330, 1800, 600, "落差约 17 m", d50);
+    pen("竖向放大了很多倍（示意）", 960, 820, 38, d50, "center");
+    const s33 = p1 * at(t, "a_33", .6);
+    pen("平均坡度 ≈ 1 : 3000  →  每公里 ≈ 33 cm", 960, 230, 48, s33, "center");
+    tblock("4", "尼姆引水道（法国）", "公元 1 世纪", p1 * fade(t, mk("a_nimes"), 1e9));
+  }
+  // 加尔桥立面
+  const p2 = a * seg(t, "a_pont", "a_jerwan");
+  if (p2 > 0) {
+    const x0 = 360, base = 760, pr = at(t, "a_pont", 2.4);
+    pdraw([[300, base], [1620, base]], 1, 3, C.dim, p2);
+    flow([[700, base + 20], [1200, base + 20]], p2 * .6, 6, 30);
+    label("加尔东河", 950, base + 60, p2, "center");
+    arches(x0, 560, 6, 200, 200, p2, pr);          // 底层大拱
+    arches(x0, 420, 11, 109, 140, p2, ramp(t, mk("a_pont") + .6, mk("a_pont") + 2.4));   // 中层
+    arches(x0, 340, 30, 40, 80, p2, ramp(t, mk("a_pont") + 1.2, mk("a_pont") + 3));       // 顶层小拱
+    flow([[x0, 330], [x0 + 1200, 332]], p2 * at(t, "a_bridge", 1), 8, 50);
+    dim(x0, 290, x0 + 1200, 290, "约 456 m", p2 * at(t, "a_bridge"));
+    pen("全长只降 ≈ 2.5 cm", x0 + 600, 230, 56, p2 * fade(t, mk("a_bridge") + .8, 1e9), "center");
+    tblock("5", "加尔桥（法国）", "公元 1 世纪", p2);
+  }
+  // 杰尔万
+  const p3 = a * seg(t, "a_jerwan", "a_rome");
+  if (p3 > 0) {
+    const tl = at(t, "a_earlier", 1);
+    pdraw([[260, 330], [1660, 330]], tl, 3, C.line, p3);
+    [["前 700", 520, C.red], ["前 312（罗马第一条）", 980, C.line], ["公元 1 世纪（加尔桥）", 1400, C.line]].forEach(([s, x, col], i) => {
+      ctx.save(); ctx.globalAlpha = p3 * tl; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, 330, 10, 0, 7); ctx.fill(); ctx.restore();
+      mono(s, x, 290, 24, col, p3 * tl); });
+    const ja = p3 * at(t, "a_jerwan", 1.6);
+    pdraw([[300, 760], [1620, 760]], ja, 3, C.dim, p3);
+    arches(560, 560, 5, 160, 200, p3, ja);
+    flow([[560, 550], [1360, 552]], p3 * at(t, "a_jerwan", 2.2), 8, 40);
+    text("尼尼微 →", 1500, 540, 32, C.line, ja, 900);
+    pen("已知最古老的引水桥之一", 960, 470, 48, p3 * at(t, "a_oldest"), "center");
+    tblock("6", "杰尔万（今伊拉克）", "约前 700 年", p3);
+  }
+  // 罗马：分水池 → 各路
+  const p4 = a * seg(t, "a_rome", "a_changan");
+  if (p4 > 0) {
+    const cx = 560, cy = 520;
+    flow([[200, cy - 40], [cx - 120, cy - 40]], p4, 8, 60);
+    label("引水道", 200, cy - 90, p4);
+    ctx.save(); ctx.globalAlpha = p4; ctx.strokeStyle = C.line; ctx.lineWidth = 4; ctx.strokeRect(cx - 120, cy - 110, 240, 220); ctx.restore();
+    waterRect(cx - 116, cy - 40, 232, 146, p4);
+    label("分水池", cx, cy + 150, p4, "center");
+    const outs = [["公共水池", 300, C.water], ["浴场", 470, C.line], ["作坊", 620, C.line], ["私人住宅（少数）", 770, C.line]];
+    const pc = at(t, "a_castellum", 1.4);
+    outs.forEach(([s, y, col], i) => {
+      const p = [[cx + 120, cy + 40 + i * 18], [cx + 300, cy + 40 + i * 18], [cx + 420, y], [1060, y]];
+      pdraw(p, pc, 3, C.line, p4); flow(p, p4 * pc, i === 0 ? 8 : 4, 60, pc);
+      text(s, 1090, y, 32, col, p4 * pc, 900, "left");
+    });
+    // 公共水池旁取水的人
+    for (let k = 0; k < 4; k++) person(1440 + k * 70, 330, .6, p4 * at(t, "a_lacus"), { jar: true, walk: true, ph: k });
+    pen("约 13% 的水 → 几乎所有普通人", 1090, 220, 42, p4 * at(t, "a_lacus"), "left");
+    mono("9 条引水道", 200, 330, 40, C.water, p4 * fade(t, mk("a_nine"), 1e9), "left");
+    text("弗朗提努斯的报告", 200, 380, 26, C.dim, p4 * fade(t, mk("a_front"), 1e9), 700, "left");
+    tblock("7", "罗马", "约公元 97 年", p4);
+  }
+  // 长安的渠 + 元大都白浮泉
+  const p5 = a * seg(t, "a_changan");
+  if (p5 > 0) {
+    const g = at(t, "a_guo", 1);
+    ctx.save(); ctx.globalAlpha = 1 - g;
+    // 长安平面：外郭、宫城、坊
+    const ox = 520, oy = 230, w = 880, h = 620;
+    pdraw([[ox, oy], [ox + w, oy], [ox + w, oy + h], [ox, oy + h], [ox, oy]], at(t, "a_changan", 1.2), 4, C.line, p5);
+    ctx.save(); ctx.globalAlpha *= p5; ctx.strokeStyle = C.line; ctx.lineWidth = 3; ctx.strokeRect(ox + w / 2 - 150, oy, 300, 160); ctx.restore();
+    text("宫城", ox + w / 2, oy + 80, 30, C.line, p5, 900);
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 8; c++) { if (r === 0 && c > 2 && c < 5) continue; ctx.save(); ctx.globalAlpha = p5 * .5; ctx.strokeStyle = C.dim; ctx.lineWidth = 1.5; ctx.strokeRect(ox + 14 + c * 108, oy + 180 + r * 86, 92, 72); ctx.restore(); }
+    const cp = at(t, "a_canals", 2);
+    const canals = [[[ox + w + 120, oy + 420], [ox + w, oy + 420], [ox + w - 200, oy + 300], [ox + w / 2 + 150, oy + 100]], [[ox + 260, oy + h + 100], [ox + 260, oy + h], [ox + 260, oy + 260], [ox + w / 2 - 150, oy + 100]], [[ox + 120, oy + h + 100], [ox + 120, oy + 300], [ox + 300, oy + 200]]];
+    ["龙首渠", "永安渠", "清明渠"].forEach((s, i) => { flow(canals[i], p5 * cp, 6, 50, cp); text(s, canals[i][0][0] + (i === 0 ? -20 : 10), canals[i][0][1] - 24, 28, C.water, p5 * cp, 900, i === 0 ? "right" : "left"); });
+    pen("渠水 → 宫苑、池塘、园林", ox + w / 2, oy - 40, 44, p5 * cp, "center");
+    const wl = p5 * at(t, "a_wells");
+    for (let k = 0; k < 18; k++) wellIcon(ox + 60 + (k % 6) * 140, oy + 300 + Math.floor(k / 6) * 110, .6, wl);
+    pen("居民 → 坊里的井", ox + w - 40, oy + h + 50, 44, wl, "right");
+    tblock("8", "唐长安", "7—9 世纪", p5 * (1 - g));
+    ctx.restore();
+    if (g > 0) {
+      const pts = [[300, 300], [700, 440], [1000, 520], [1300, 600]];
+      pdraw(pts, at(t, "a_guo", 2), 3, C.line, p5 * g);
+      flow(pts, p5 * g * at(t, "a_guo", 2.6), 7, 60, at(t, "a_guo", 2.6));
+      [["白浮泉（昌平）", 0], ["瓮山泊（今昆明湖）", 2], ["积水潭 · 大都城", 3]].forEach(([s, i]) => { ctx.save(); ctx.globalAlpha = p5 * g; ctx.fillStyle = C.water; ctx.beginPath(); ctx.arc(pts[i][0], pts[i][1], 12, 0, 7); ctx.fill(); ctx.restore(); text(s, pts[i][0], pts[i][1] - 40, 30, C.line, p5 * g, 900); });
+      ctx.save(); ctx.globalAlpha = p5 * g; ctx.strokeStyle = C.line; ctx.lineWidth = 3; ctx.strokeRect(1240, 560, 300, 220); ctx.restore();
+      pen("补城市用水 · 撑运河漕运", 960, 820, 46, p5 * at(t, "a_canal"), "center");
+      tblock("9", "元大都（北京）", "约 1292 年", p5 * g);
+    }
+  }
+};
+// 三 坎儿井剖面 → 吐鲁番 → 欧帕利诺斯隧道
+SCN.qanat = (t, a) => {
+  const p1 = a * seg(t, "q_start", "q_greek");
+  if (p1 > 0) {
+    // 地面：左高右低
+    const ground = x => lerp(240, 700, (x - 160) / 1600);
+    const gp = []; for (let x = 160; x <= 1760; x += 40) gp.push([x, ground(x)]);
+    pdraw(gp, at(t, "q_start", 1.2), 4, C.line, p1);
+    // 蒸发：地表明渠的水被“晒干”
+    const ev = p1 * fade(t, mk("q_start"), mk("q_mother"), .4);
+    if (ev > 0) { sun(1500, 200, 50, ev); for (let k = 0; k < 6; k++) { const ph = (t * .6 + k / 6) % 1; ctx.save(); ctx.globalAlpha = ev * (1 - ph); ctx.strokeStyle = C.water; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(1100 + k * 60, 560 - ph * 160); ctx.quadraticCurveTo(1110 + k * 60, 540 - ph * 160, 1100 + k * 60, 520 - ph * 160); ctx.stroke(); ctx.restore(); } }
+    // 地下水位（左侧山前）
+    const wt = p1 * at(t, "q_mother");
+    pdraw([[160, 480], [700, 560], [1100, 700]], wt, 3, C.water, p1, [14, 10]);
+    dots(160, 500, 560, 120, wt * .8);
+    label("地下水位", 1010, 705, wt);
+    // 母井
+    const mw = at(t, "q_mother", 1.4), mx = 440, TY = x => 560 + .04 * (x - 440), EXIT = 1408;
+    pdraw([[mx, ground(mx)], [mx, ground(mx) + (TY(mx) - ground(mx)) * mw]], 1, 6, C.line, p1);
+    label("母井", mx + 20, ground(mx) - 30, p1 * mw);
+    // 暗渠：坡度比地面缓
+    const tunnel = [[mx, TY(mx)], [EXIT, TY(EXIT)]];
+    const tp = at(t, "q_tunnel", 2);
+    pdraw(tunnel, tp, 6, C.line, p1);
+    flow(tunnel, p1 * at(t, "q_tunnel", 2.6), 6, 50, at(t, "q_tunnel", 2.6));
+    label("暗渠（缓坡）", 900, TY(900) + 40, p1 * tp, "center");
+    // 竖井 + 土堆
+    const sh = at(t, "q_shafts", 2);
+    for (let k = 1; k <= 12; k++) {
+      const x = mx + k * 95; if (x > EXIT - 60) break;
+      const ty = TY(x), gy = ground(x), pk = clamp(sh * 13 - k);
+      pdraw([[x, gy], [x, lerp(gy, ty, pk)]], 1, 3, C.line, p1);
+      if (pk > 0) { ctx.save(); ctx.globalAlpha = p1 * pk; ctx.strokeStyle = C.line; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, gy, 18, Math.PI, 0); ctx.stroke(); ctx.restore(); }
+    }
+    label("竖井", mx + 3 * 95 + 14, ground(mx + 3 * 95) - 44, p1 * sh);
+    dim(mx + 95 * 4, ground(mx + 95 * 4) - 80, mx + 95 * 5, ground(mx + 95 * 5) - 80, "20–35 m", p1 * at(t, "q_shafts", 1.5));
+    const dp = p1 * at(t, "q_depth");
+    dim(mx - 60, ground(mx), mx - 60, TY(mx), "深可达 100–200 m", dp, -1);
+    pen("坡度 ≈ 1 : 1000 ~ 1 : 1500", 860, 760, 46, dp, "center");
+    // 出口 → 明渠 → 水池 → 村镇
+    const op = at(t, "q_out", 1.6);
+    const out = [[EXIT, TY(EXIT)], [1560, ground(1560)]];
+    flow(out, p1 * op, 6, 50, op);
+    waterRect(1560, ground(1600) - 4, 110, 30, p1 * op);
+    label("水池 → 村镇、田地", 1615, ground(1600) + 60, p1 * op, "center");
+    const tu = p1 * fade(t, mk("q_turpan"), 1e9, .4);
+    if (tu > 0) {
+      [["竖井", mx + 95 * 2, ground(mx + 190) - 70], ["暗渠", 1100, TY(1100) + 50], ["明渠", 1490, ground(1490) - 50], ["涝坝", 1615, ground(1600) - 60]].forEach(([s, x, y], i) => pen(s, x, y, 44, tu * fade(t, mk("q_turpan") + .4 + i * .5, 1e9, .3)));
+      pen("吐鲁番：暗渠总长 3200 多公里", 960, 230, 52, p1 * at(t, "q_3200"), "center");
+    }
+    tblock(at(t, "q_turpan", .3) > .5 ? "11" : "10", at(t, "q_turpan", .3) > .5 ? "吐鲁番（新疆）" : "伊朗高原", at(t, "q_turpan", .3) > .5 ? "现存" : "两千多年前起", p1 * fade(t, mk("q_name"), 1e9));
+  }
+  // 欧帕利诺斯：从两头挖
+  const p2 = a * seg(t, "q_greek");
+  if (p2 > 0) {
+    const hill = [[200, 760], [520, 520], [800, 330], [1100, 310], [1400, 480], [1720, 760]];
+    pdraw(hill, at(t, "q_greek", 1.2), 4, C.line, p2);
+    hatch(200, 300, 1520, 460, p2 * .6);
+    const y = 640, mid = 960, dig = at(t, "q_eup", 3);
+    pdraw([[420, y], [lerp(420, mid, dig), y]], 1, 10, C.line, p2);
+    pdraw([[1500, y], [lerp(1500, mid, dig), y]], 1, 10, C.line, p2);
+    if (dig < 1) { person(lerp(420, mid, dig) + 30, y, .55, p2); person(lerp(1500, mid, dig) - 30, y, .55, p2); }
+    const meet = at(t, "q_meet", 1);
+    circ(mid, y, 60, 50, meet, p2);
+    flow([[300, y - 4], [1620, y - 4]], p2 * at(t, "q_meet", 2), 6, 60, at(t, "q_meet", 2));
+    dim(420, y + 80, 1500, y + 80, "约 1036 m", p2 * meet);
+    pen("两队在山里会合", mid, y - 120, 48, p2 * meet, "center");
+    text("泉水", 260, y - 50, 30, C.water, p2 * meet, 900); text("城市", 1650, y - 50, 30, C.line, p2 * meet, 900);
+    tblock("12", "萨摩斯岛（希腊）", "前 6 世纪", p2);
+  }
+};
+function sun(x, y, r, a) { if (a <= 0) return; ctx.save(); ctx.globalAlpha *= a; ctx.strokeStyle = C.red; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y, r * .5, 0, 7); ctx.stroke(); for (let k = 0; k < 8; k++) { const an = k * Math.PI / 4 + T * .3; ctx.beginPath(); ctx.moveTo(x + Math.cos(an) * r * .7, y + Math.sin(an) * r * .7); ctx.lineTo(x + Math.cos(an) * r, y + Math.sin(an) * r); ctx.stroke(); } ctx.restore(); }
+// 四 蓄水池：地下水宫平面 + 剖面 → 阶梯井
+SCN.cis = (t, a) => {
+  const p1 = a * seg(t, "c_start", "c_step");
+  if (p1 > 0) {
+    // 平面：12 × 28 根柱子
+    const ox = 330, oy = 250, cw = 1260 / 28, rh = 300 / 12;
+    const n = Math.round(336 * at(t, "c_336", 2.5));
+    ctx.save(); ctx.globalAlpha = p1 * fade(t, mk("c_basilica"), 1e9); ctx.strokeStyle = C.line; ctx.lineWidth = 3; ctx.strokeRect(ox - 20, oy - 20, 1260 + 20, 300 + 20); ctx.restore();
+    for (let i = 0; i < n; i++) { const r = Math.floor(i / 28), c = i % 28; ctx.save(); ctx.globalAlpha = p1; ctx.fillStyle = C.line; ctx.fillRect(ox + c * cw + cw / 2 - 5, oy + r * rh + rh / 2 - 5, 10, 10); ctx.restore(); }
+    mono(`${n} 根柱子`, ox + 1260, oy - 50, 40, C.line, p1 * fade(t, mk("c_336"), 1e9), "right");
+    const rw = p1 * at(t, "c_rows");
+    dim(ox - 50, oy, ox - 50, oy + 300, "12 排", rw, -150); dim(ox, oy + 330, ox + 1260, oy + 330, "每排 28 根", rw);
+    // 剖面：拱顶 + 水位上升
+    const sy = 640, fill = at(t, "c_80k", 3);
+    for (let k = 0; k < 10; k++) { const x = ox + k * 126; ctx.save(); ctx.globalAlpha = p1 * fade(t, mk("c_80k"), 1e9); ctx.strokeStyle = C.line; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x + 8, sy + 260); ctx.lineTo(x + 8, sy + 60); ctx.arc(x + 63, sy + 60, 55, Math.PI, 0); ctx.lineTo(x + 118, sy + 260); ctx.stroke(); ctx.restore(); }
+    waterRect(ox, sy + 260 - 180 * fill, 1260, 180 * fill, p1 * fade(t, mk("c_80k"), 1e9));
+    pen("≈ 8 万立方米 ≈ 30 多个标准泳池（估算）", ox + 630, sy + 20, 44, p1 * fade(t, mk("c_80k") + 1, 1e9), "center");
+    const rs = p1 * at(t, "c_reserve");
+    flow([[160, sy + 90], [ox, sy + 90]], rs, 8, 40);
+    pen("旱季 · 围城 → 后备水源", ox + 630, sy - 40, 44, rs, "center");
+    tblock("13", "君士坦丁堡", "约 532 年", p1);
+  }
+  // 阶梯井剖面：水位涨落，台阶永远能走到水边
+  const p2 = a * seg(t, "c_step");
+  if (p2 > 0) {
+    const cx = W / 2, top = 300, bot = 820, steps = 9;
+    const pts = [[cx - 640, top]];
+    for (let i = 0; i < steps; i++) { const x = cx - 640 + (i + 1) * 60, y = top + i * (bot - top) / steps; pts.push([x - 60, y + (bot - top) / steps], [x, y + (bot - top) / steps]); }
+    pdraw(pts, at(t, "c_step", 2), 4, C.line, p2);
+    const pts2 = pts.map(([x, y]) => [2 * cx - x, y]);
+    pdraw(pts2, at(t, "c_step", 2), 4, C.line, p2);
+    pdraw([[cx - 640 + steps * 60, bot], [cx + 640 - steps * 60, bot]], at(t, "c_step", 2), 4, C.line, p2);
+    const lv = p2 * fade(t, mk("c_levels"), 1e9, .4);
+    const wy = lerp(bot - 360, bot - 70, .5 + .5 * Math.sin((t - mk("c_levels")) * .7));
+    const half = lerp(640 - steps * 60, 640, (bot - wy) / (bot - top)) - 20;
+    waterRect(cx - half, wy, half * 2, bot - wy, lv);
+    // 走下台阶的人
+    const si = clamp(Math.floor((wy - top) / ((bot - top) / steps)), 0, steps - 1);
+    person(cx - 640 + (si + .5) * 60, top + si * (bot - top) / steps, .7, lv, { jar: true });
+    mono(wy < bot - 220 ? "雨季：水位高" : "旱季：水位低", cx, top - 40, 34, C.water, lv);
+    tblock("14", "帕坦（印度古吉拉特）", "11 世纪", p2 * fade(t, mk("c_rani"), 1e9));
+  }
+};
+// 五 水车
+SCN.lift = (t, a) => {
+  const cx = 820, cy = 520, R = 300;
+  const wa = a * fade(t, mk("l_hama") - .3, 1e9, .4);
+  // 城市在高处、河在低处
+  const p0 = a * fade(t, mk("l_start"), mk("l_hama"), .4);
+  if (p0 > 0) { pdraw([[300, 820], [1600, 820]], 1, 3, C.water, p0); text("河", 400, 790, 36, C.water, p0, 900); pdraw([[1300, 400], [1600, 400], [1600, 820]], 1, 3, C.line, p0); text("城市", 1450, 360, 36, C.line, p0, 900); pen("怎么上去？", 1000, 560, 64, p0); }
+  if (wa > 0) {
+    flow([[200, cy + R + 20], [1500, cy + R + 20]], wa, 8, 80);
+    text("奥龙特斯河", 300, cy + R + 70, 30, C.water, wa, 900, "left");
+    const rot = (t - mk("l_hama")) * .35 * at(t, "l_turn", .1 + 1e-6);
+    ctx.save(); ctx.globalAlpha = wa; ctx.strokeStyle = C.line; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke(); ctx.beginPath(); ctx.arc(cx, cy, 30, 0, 7); ctx.stroke();
+    for (let k = 0; k < 16; k++) { const an = rot + k * Math.PI / 8; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx + Math.cos(an) * 30, cy + Math.sin(an) * 30); ctx.lineTo(cx + Math.cos(an) * R, cy + Math.sin(an) * R); ctx.stroke();
+      // 水斗：在下半圈装满水，转到顶部倒出
+      const bx = cx + Math.cos(an) * (R + 18), by = cy + Math.sin(an) * (R + 18);
+      const sn = Math.sin(an), full = ((an % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      const has = full > 0.2 && full < Math.PI * 1.5;   // 从底部（π/2）舀起，到顶部（3π/2）前一直满
+      ctx.lineWidth = 3; ctx.strokeRect(bx - 14, by - 12, 28, 24);
+      if (has && at(t, "l_turn") > .5) { ctx.fillStyle = "rgba(127,211,255,.8)"; ctx.fillRect(bx - 12, by - 4, 24, 14); } }
+    ctx.restore();
+    // 顶部倒进高架水渠
+    const dp = at(t, "l_dump", 1.2);
+    pdraw([[cx - 40, cy - R - 30], [cx + 120, cy - R - 30], [1500, cy - R + 40]], 1, 5, C.line, wa * dp);
+    flow([[cx + 40, cy - R - 40], [cx + 120, cy - R - 40], [1500, cy - R + 30]], wa * dp, 7, 60, dp);
+    if (dp > 0) for (let k = 0; k < 3; k++) { const ph = (t * 1.5 + k / 3) % 1; ctx.save(); ctx.globalAlpha = wa * dp * (1 - ph); ctx.fillStyle = C.water; ctx.beginPath(); ctx.arc(cx + 10 + ph * 30, cy - R - 10 - 0 + ph * -20, 6, 0, 7); ctx.fill(); ctx.restore(); }
+    text("→ 田地、花园、房屋", 1520, cy - R + 30, 30, C.line, wa * dp, 900, "left");
+    const s17 = wa * at(t, "l_17");
+    for (let k = 0; k < 30; k++) { const x = 1300 + (k % 10) * 46, y = 640 + Math.floor(k / 10) * 56; ctx.save(); ctx.globalAlpha = s17 * (k < 17 ? 1 : .25); ctx.strokeStyle = k < 17 ? C.line : C.dim; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, 18, 0, 7); ctx.stroke(); ctx.restore(); }
+    pen("曾有 30 多架 · 现存 17 架", 1500, 590, 40, s17, "center");
+    pen("抬水很费力 →", 110, 600, 50, wa * at(t, "l_hard"), "left"); pen("能用重力就用重力", 110, 670, 50, wa * at(t, "l_hard"), "left");
+    tblock("15", "哈马（叙利亚）", "中世纪起", wa);
+  }
+};
+// 六 最后一段路：罗马公寓 → 杭州六井 → 北京送水 → 日常
+SCN.life = (t, a) => {
+  const p1 = a * seg(t, "d_start", "d_hz");
+  if (p1 > 0) {
+    // 公寓楼剖面：五层，只有底层附近有公共水池
+    const bx = 760, by = 820, fw = 420, fh = 100;
+    for (let f = 0; f < 5; f++) { ctx.save(); ctx.globalAlpha = p1 * fade(t, mk("d_start") + f * .15, 1e9, .3); ctx.strokeStyle = C.line; ctx.lineWidth = 3; ctx.strokeRect(bx, by - (f + 1) * fh, fw, fh); ctx.restore(); }
+    // 楼梯（之字）
+    const st = []; for (let f = 0; f < 5; f++) st.push([f % 2 ? bx + fw - 40 : bx + 40, by - f * fh], [f % 2 ? bx + 40 : bx + fw - 40, by - (f + 1) * fh]);
+    pdraw(st, 1, 2, C.dim, p1 * fade(t, mk("d_rome"), 1e9));
+    // 公共水池
+    ctx.save(); ctx.globalAlpha = p1 * fade(t, mk("d_rome"), 1e9); ctx.strokeStyle = C.line; ctx.lineWidth = 4; ctx.strokeRect(360, by - 60, 220, 60); ctx.restore();
+    waterRect(364, by - 44, 212, 40, p1 * fade(t, mk("d_rome"), 1e9));
+    flow([[470, by - 160], [470, by - 60]], p1 * fade(t, mk("d_rome"), 1e9), 6, 80);
+    label("公共水池", 470, by + 40, p1 * fade(t, mk("d_rome"), 1e9), "center");
+    // 提罐上楼的人：沿楼梯走
+    const up = p1 * fade(t, mk("d_up"), 1e9, .4);
+    if (up > 0) { const L = polyLen(st), ph = ((t - mk("d_up")) * .12) % 1; let d = ph * L, pos = st[0];
+      for (let i = 1; i < st.length; i++) { const s = Math.hypot(st[i][0] - st[i - 1][0], st[i][1] - st[i - 1][1]); if (d <= s) { pos = [lerp(st[i - 1][0], st[i][0], d / s), lerp(st[i - 1][1], st[i][1], d / s)]; break; } d -= s; }
+      person(pos[0], pos[1], .6, up, { jar: true, walk: true });
+      pen("上层：没有水管", bx + fw + 40, by - 4.5 * fh, 44, up, "left"); }
+    person(1400, by, .8, p1 * at(t, "d_carrier"), { yoke: true, walk: true }); pen("送水的人", 1400, by - 130, 40, p1 * at(t, "d_carrier"), "center");
+    tblock("16", "罗马公寓（insula）", "帝国时期", p1);
+  }
+  // 杭州六井
+  const p2 = a * seg(t, "d_hz", "d_bj");
+  if (p2 > 0) {
+    // 西湖（左）→ 城（右）
+    ctx.save(); ctx.globalAlpha = p2; ctx.fillStyle = "rgba(127,211,255,.22)"; ctx.strokeStyle = C.water; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(470, 560, 230, 260, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore();
+    text("西湖", 470, 560, 44, C.water, p2, 900);
+    ctx.save(); ctx.globalAlpha = p2; ctx.strokeStyle = C.line; ctx.lineWidth = 4; ctx.strokeRect(900, 260, 760, 600); ctx.restore();
+    text("杭州城", 1280, 230, 34, C.line, p2, 900);
+    const names = ["相国井", "西井", "方井", "金牛池", "白龟井", "小方井"];
+    const sp = at(t, "d_six", 2);
+    names.forEach((s, i) => {
+      const ex = 1080 + (i % 3) * 220, ey = 420 + Math.floor(i / 3) * 260;
+      const pipe = [[700, 480 + i * 30], [900, 480 + i * 30], [ex, ey]];
+      pdraw(pipe, at(t, "d_hz", 1.6), 3, at(t, "d_su") > .5 ? C.line : C.dim, p2);
+      flow(pipe, p2 * sp, 5, 50, sp);
+      wellIcon(ex, ey + 30, 1, p2 * sp); text(s, ex, ey + 70, 26, C.line, p2 * sp, 900);
+    });
+    const su = p2 * at(t, "d_su");
+    pen("竹管", 790, 360, 44, p2 * fade(t, mk("d_hz"), 1e9) * (1 - at(t, "d_su", .5)), "center");
+    if (su > 0) { pen("竹管", 790, 360, 44, su, "center"); pdraw([[740, 360], [840, 360]], su, 5, C.red, 1); pen("瓦管（1072 年，苏轼）", 790, 310, 44, su, "center"); }
+    tblock("17", "杭州", "唐 · 北宋", p2);
+  }
+  // 北京送水：独轮车 + 水窝子分段
+  const p3 = a * seg(t, "d_bj", "d_cost");
+  if (p3 > 0) {
+    const y0 = 700;
+    pdraw([[200, y0], [1720, y0]], 1, 3, C.dim, p3);
+    for (let k = 0; k < 7; k++) { const x = 300 + k * 220; ctx.save(); ctx.globalAlpha = p3 * .9; ctx.strokeStyle = C.line; ctx.lineWidth = 3; ctx.strokeRect(x - 70, y0 - 160, 140, 160); ctx.strokeRect(x - 20, y0 - 70, 40, 70); ctx.restore(); }
+    wellIcon(250, y0 + 120, 1.2, p3); text("甜水井", 250, y0 + 170, 28, C.water, p3, 900);
+    // 独轮车送水
+    const cp = ((t - mk("d_cart")) * .08) % 1;
+    if (t > mk("d_cart")) { const x = lerp(300, 1650, cp); ctx.save(); ctx.globalAlpha = p3; ctx.strokeStyle = C.line; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(x + 40, y0 + 90, 26, 0, 7); ctx.stroke(); ctx.strokeRect(x, y0 + 20, 90, 50); ctx.beginPath(); ctx.moveTo(x, y0 + 50); ctx.lineTo(x - 50, y0 + 70); ctx.stroke(); ctx.restore();
+      waterRect(x + 4, y0 + 32, 82, 34, p3); person(x - 70, y0 + 110, .7, p3, { walk: true }); }
+    const wz = p3 * at(t, "d_wozi");
+    for (let k = 1; k < 4; k++) pdraw([[200 + k * 400, 260], [200 + k * 400, 900]], wz, 4, C.red, 1, [16, 12]);
+    ["甲段", "乙段", "丙段", "丁段"].forEach((s, k) => pen(s + "水夫", 400 + k * 400, 300, 40, wz, "center"));
+    tblock("18", "北京", "明清", p3);
+  }
+  // 日常：四张卡
+  const p4 = a * seg(t, "d_cost");
+  if (p4 > 0) {
+    [["d_cost", "体力与时间", "每天挑水、打水"], ["d_social", "碰面的地方", "井边、水池边"], ["d_risk", "疾病与围城", "水质 · 水源被切断"], ["d_maint", "年年维护", "清淤，否则荒废"]].forEach(([mm, h1, h2], i) => {
+      const al = p4 * fade(t, mk(mm), 1e9, .4), x = 230 + i * 375, y = 330;
+      ctx.save(); ctx.globalAlpha = al; ctx.strokeStyle = C.line; ctx.lineWidth = 3; ctx.strokeRect(x, y, 330, 420); ctx.restore();
+      mono(`0${i + 1}`, x + 30, y + 40, 30, C.water, al, "left");
+      text(h1, x + 165, y + 220, 40, C.line, al, 900); text(h2, x + 165, y + 290, 28, C.dim, al, 700);
+    });
+  }
+};
+// 七 总结：四种办法 + 人 → 1908
+SCN.sum = (t, a) => {
+  const p1 = a * seg(t, "s_start", "s_1908");
+  if (p1 > 0) {
+    const items = [["s_1", "往下挖", "井 · 阶梯井 · 坎儿井"], ["s_2", "从远处引", "渠道 · 引水道 · 水道桥"], ["s_3", "存起来", "蓄水池"], ["s_4", "抬上来", "水车"]];
+    items.forEach(([mm, h1, h2], i) => {
+      const al = p1 * fade(t, mk(mm), 1e9, .4), x = 300 + (i % 2) * 680, y = 300 + Math.floor(i / 2) * 250;
+      ctx.save(); ctx.globalAlpha = al; ctx.strokeStyle = C.line; ctx.lineWidth = 3; ctx.strokeRect(x, y, 640, 210); ctx.restore();
+      mono(`0${i + 1}`, x + 40, y + 50, 32, C.water, al, "left");
+      text(h1, x + 320, y + 90, 52, C.line, al, 900); text(h2, x + 320, y + 160, 30, C.dim, al, 700);
+    });
+    const pa = p1 * at(t, "s_5");
+    for (let k = 0; k < 6; k++) person(560 + k * 150, 860, .6, pa, { yoke: k % 2 === 0, jar: k % 2 === 1, walk: true, ph: k });
+    pen("+ 挑水、送水的人", 1500, 830, 46, pa, "center");
+    pen("几种办法 · 配合着用", 960, 250, 48, p1 * at(t, "s_combo"), "center");
+  }
+  const p2 = a * seg(t, "s_1908");
+  if (p2 > 0) {
+    mono("1908", W / 2, 470, 200, C.water, p2);
+    text("北京开始筹办第一家自来水公司", W / 2, 650, 44, C.line, p2, 900);
+    pen("在那之前的几千年 → 井、渠、池、车，和人", W / 2, 760, 46, p2 * at(t, "s_before"), "center");
+  }
+};
+SCN.end = (t, a) => {
+  const fin = at(t, "e_title", .8);
+  if (fin < 1) {
+    const al = a * (1 - fin), x = 960, y = 420;
+    pdraw([[x - 200, y], [x + 40, y], [x + 40, y + 80]], 1, 10, C.line, al);
+    pdraw([[x - 40, y], [x - 40, y - 60], [x - 90, y - 60]], 1, 8, C.line, al);
+    flow([[x + 40, y + 90], [x + 40, y + 360]], al, 14, 160);
+    pen("多少口井、多长的渠？", x + 120, y + 220, 52, al * at(t, "e_think"), "left");
+  }
+  if (fin > 0) {
+    text("古代城市，怎么喝上水？", W / 2, 440, 92, C.line, a * fin, 900);
+    mono("HOW ANCIENT CITIES GOT THEIR WATER", W / 2, 540, 34, C.water, a * fin);
+    ["往下挖", "从远处引", "存起来", "抬上来"].forEach((s, i) => text(s, W / 2 + (i - 1.5) * 260, 660, 40, C.line, a * fade(t, mk("e_title") + .6 + i * .3, 1e9, .3), 900));
+  }
+};
+
+// ───────── 主绘制
+function draw_frame(t) {
+  T = t;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  // 网格 + 图框
+  ctx.strokeStyle = "rgba(234,242,255,.06)"; ctx.lineWidth = 1;
+  for (let x = 0; x <= W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y <= H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  ctx.strokeStyle = "rgba(234,242,255,.13)";
+  for (let x = 0; x <= W; x += 200) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y <= H; y += 200) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  ctx.strokeStyle = "rgba(234,242,255,.5)"; ctx.lineWidth = 3; ctx.strokeRect(30, 30, W - 60, H - 60);
+  for (const R of RUNS) { const a = fade(t, R.t0 - .3, R.t1 + .35, .5); if (a > 0) { ctx.save(); SCN[R.sc](t, a, R); ctx.restore(); } }
+  // 关键词
+  let curK = null;
+  for (const R of RUNS) for (const e of R.es) if (e.k && t >= e.t0 - .1) { const next = R.es.find(x => x.t0 > e.t0 && x.k), end = next ? next.t0 : R.t1; if (t < end + .3) curK = [e.k, e.t0, end]; }
+  if (curK) { const al = fade(t, curK[1], curK[2], .35); ctx.save(); ctx.globalAlpha = al * .9; ctx.fillStyle = C.bg; ctx.font = `900 64px ${SANS}`; const w = ctx.measureText(curK[0]).width; ctx.fillRect(W / 2 - w / 2 - 30, 90, w + 60, 100); ctx.restore(); text(curK[0], W / 2, 140, 64, C.line, al, 900); }
+  // 出处（左下）
+  for (const R of RUNS) R.es.forEach((e, i) => { if (!e.n) return; const nx = R.es.slice(i + 1).find(x => x.n), end = Math.min(nx ? nx.t0 : R.t1, e.t0 + 16);
+    text("SOURCE · " + e.n, 60, 965, 20, C.dim, fade(t, e.t0, end, .3), 500, "left", SANS, 0); });
+  // 字幕
+  for (const e of SCRIPT) { if (!e.s) continue; const al = fade(t, e.t0, e.t1, .15); if (al <= 0) continue;
+    ctx.save(); ctx.globalAlpha = al; ctx.font = `700 40px ${SANS}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineWidth = 10; ctx.lineJoin = "round"; ctx.strokeStyle = C.bg; ctx.strokeText(e.s, W / 2, 1012); ctx.fillStyle = C.line; ctx.fillText(e.s, W / 2, 1012); ctx.restore(); }
+  const fk = 1 - Math.min(clamp(t / .5), clamp((END - t) / 1));
+  if (fk > 0) { ctx.fillStyle = `rgba(6,20,40,${fk})`; ctx.fillRect(0, 0, W, H); }
+}
+window.draw = draw_frame; window.END = END;
+window.events = () => ({ marks: M, end: END, pages: RUNS.filter(R => R.sc === "chap").map(R => R.t0) });
+const ALLTXT = [...new Set(document.scripts[0].textContent)].join("");
+window.ready = document.fonts.ready.then(() => Promise.all([
+  document.fonts.load(`400 44px "Long Cang"`, ALLTXT), document.fonts.load(`900 64px "Noto Sans SC"`, ALLTXT), document.fonts.load(`700 40px "Noto Sans SC"`, ALLTXT),
+  document.fonts.load(`900 64px "Noto Sans SC"`, SCRIPT.map(e => (e.k || "") + (e.ch || "") + e.s).join("")),
+  document.fonts.load(`700 40px "Noto Sans SC"`, SCRIPT.map(e => e.s).join("")), document.fonts.load(`500 20px "Noto Sans SC"`, SCRIPT.map(e => e.n || "").join("")),
+  document.fonts.load(`400 44px "Long Cang"`, "一百多年前没有估算七百多口井每点约代表街边公共甜水很少要花钱买量有限旱年会干质看运气竖向放大了很多倍示意平均坡度公里全长只降已知最古老的引水桥之一约的几乎所有普通人渠宫苑池塘园林居民坊里补城市用撑运河漕深可达吐鲁番暗总长两队在山里会合万立方米标准泳池季围城后备源雨怎么上去曾有架现存抬很费力能重就上层没有管送人竹瓦苏轼甲乙丙丁段夫挑配合着用之前千年渠车多少长"),
+  document.fonts.load(`700 26px "Geist Mono"`, "0123456789FIGPART"),
+])).then(() => true);
+</script></body></html>
