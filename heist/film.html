@@ -1,0 +1,436 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+</head><body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// 1990 年 3 月 18 日 · 波士顿 · 加德纳博物馆失窃案 · 值班保安的第一视角（完整版）
+const W = 1920, H = 1080;
+const ctx = document.getElementById("c").getContext("2d");
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const ease = p => { p = clamp(p); return p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const ramp = (t, a, b) => ease((t - a) / (b - a));
+const fade = (t, a, b, d = .4) => clamp(Math.min((t - a) / d, (b - t) / d));
+const SERIF = '"Noto Serif SC", serif', SANS = '"Noto Sans SC", sans-serif', MONO = '"Share Tech Mono", monospace';
+const hash = n => { const x = Math.sin(n * 127.1) * 43758.5453; return x - Math.floor(x); };
+const noise1 = t => { const i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f); return lerp(hash(i), hash(i + 1), u) * 2 - 1; };
+let T = 0;
+
+// ───────── 时间线（秒）
+const S = {
+  patrol: [0, 62], desk: [62, 96], corridor: [96, 118], away: [118, 134], wall: [134, 160],
+  stairs: [160, 185], tape: [185, 195], dark: [195, 287], quiet: [287, 297], hours: [297, 330],
+  morning: [330, 350], frames: [350, 392],
+};
+const END = 392;
+const inS = (t, k) => t >= S[k][0] && t < S[k][1];
+// 紧张度曲线（决定心跳快慢、暗角宽窄、晃动幅度）
+const TENS = [[0, .08], [60, .1], [70, .3], [80, .4], [96, .55], [110, .7], [125, .85], [140, 1], [160, .9], [190, 1], [200, .8], [240, .75], [287, .9], [297, .45], [330, .35], [340, .6], [350, .15], [392, .1]];
+const tension = t => { for (let i = 1; i < TENS.length; i++) if (t <= TENS[i][0]) return lerp(TENS[i - 1][1], TENS[i][1], (t - TENS[i - 1][0]) / (TENS[i][0] - TENS[i - 1][0])); return .1; };
+const BEATS = []; { let t = .4; while (t < END - 2) { const bpm = 58 + 74 * tension(t); BEATS.push(t, t + .2); t += 60 / bpm; } }
+function pulse(t) { let lo = 0, hi = BEATS.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (BEATS[m] <= t) lo = m; else hi = m - 1; }
+  let p = 0; for (let k = Math.max(0, lo - 1); k <= lo; k++) { const d = t - BEATS[k]; if (d >= 0 && d < .35) p = Math.max(p, Math.exp(-d * 12)); } return p; }
+function shake(t) { const k = .5 + tension(t) * 2.2; return [noise1(t * .7) * 6 * k + noise1(t * 7) * 1.5 * k, noise1(t * .6 + 9) * 5 * k + Math.sin(t * 1.4) * 4]; }
+function grainCanvas() { const cv = document.createElement("canvas"); cv.width = 480; cv.height = 270; const g = cv.getContext("2d"), im = g.createImageData(480, 270);
+  for (let i = 0; i < im.data.length; i += 4) { const v = Math.random() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 30; } g.putImageData(im, 0, 0); return cv; }
+const GR = [...Array(8)].map(grainCanvas);
+
+// ───────── 画：画框与两幅“画”（抽象的暴风雨中的船 / 弹琴的人）
+function painting(kind, x, y, w, h, light, alpha = 1, gone = 0) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  // 金色画框
+  const fr = Math.max(8, w * .07);
+  ctx.fillStyle = `rgba(${130 * light + 20},${100 * light + 14},${48 * light + 8},1)`; ctx.fillRect(x - fr, y - fr, w + fr * 2, h + fr * 2);
+  ctx.fillStyle = `rgba(${60 * light + 6},${46 * light + 5},${22 * light + 3},1)`; ctx.fillRect(x - fr * .35, y - fr * .35, w + fr * .7, h + fr * .7);
+  // 画面
+  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  const L = light * (1 - gone);
+  ctx.fillStyle = `rgba(${18 + 40 * L},${20 + 36 * L},${18 + 28 * L},1)`; ctx.fillRect(x, y, w, h);
+  if (gone < 1) {
+    ctx.globalAlpha *= 1 - gone;
+    if (kind === "storm") {
+      // 天空裂开的一道亮、斜着的船身和帆
+      const g = ctx.createRadialGradient(x + w * .7, y + h * .25, 5, x + w * .7, y + h * .25, w * .6); g.addColorStop(0, `rgba(${170 * light},${150 * light},${100 * light},.9)`); g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = `rgba(${12 + 20 * light},${10 + 16 * light},${8 + 10 * light},1)`;
+      ctx.beginPath(); ctx.moveTo(x + w * .15, y + h * .78); ctx.lineTo(x + w * .78, y + h * .62); ctx.lineTo(x + w * .72, y + h * .78); ctx.lineTo(x + w * .2, y + h * .9); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x + w * .45, y + h * .7); ctx.lineTo(x + w * .52, y + h * .12); ctx.lineTo(x + w * .74, y + h * .55); ctx.fill();
+      ctx.strokeStyle = `rgba(${120 * light},${130 * light},${120 * light},.6)`; ctx.lineWidth = 3;
+      for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.moveTo(x, y + h * (.82 + k * .05)); ctx.quadraticCurveTo(x + w * .5, y + h * (.72 + k * .05), x + w, y + h * (.86 + k * .04)); ctx.stroke(); }
+    } else if (kind === "concert") {
+      ctx.fillStyle = `rgba(${90 * light},${80 * light},${60 * light},1)`; ctx.fillRect(x + w * .1, y + h * .55, w * .55, h * .14);   // 琴
+      ctx.fillStyle = `rgba(${14 + 30 * light},${12 + 24 * light},${10 + 14 * light},1)`;
+      ctx.beginPath(); ctx.arc(x + w * .38, y + h * .36, w * .06, 0, 7); ctx.fill(); ctx.fillRect(x + w * .3, y + h * .42, w * .16, h * .2);
+      ctx.beginPath(); ctx.arc(x + w * .7, y + h * .32, w * .055, 0, 7); ctx.fill(); ctx.fillRect(x + w * .63, y + h * .38, w * .15, h * .3);
+      ctx.fillStyle = `rgba(${150 * light},${120 * light},${70 * light},.5)`; ctx.fillRect(x + w * .05, y + h * .08, w * .3, h * .22);
+    } else {
+      ctx.fillStyle = `rgba(${14 + 30 * light},${12 + 22 * light},${10 + 14 * light},1)`;
+      ctx.beginPath(); ctx.ellipse(x + w * .5, y + h * .4, w * .2, h * .22, 0, 0, 7); ctx.fill(); ctx.fillRect(x + w * .25, y + h * .6, w * .5, h * .4);
+    }
+  }
+  ctx.restore();
+}
+// 手电筒光锥：在暗场里挖出一块亮
+function torch(cx, cy, r, a) {
+  const g = ctx.createRadialGradient(cx, cy, r * .1, cx, cy, r);
+  g.addColorStop(0, `rgba(255,236,190,${.55 * a})`); g.addColorStop(.6, `rgba(255,220,160,${.2 * a})`); g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = g; ctx.fillRect(cx - r, cy - r, r * 2, r * 2); ctx.restore();
+}
+function silhouette(x, y, s, alpha = 1, bob = 0, col = "rgba(4,4,5,.98)") {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = col;
+  ctx.beginPath(); ctx.ellipse(x, y - s * .72 - bob, s * .09, s * .11, 0, 0, 7); ctx.fill();
+  ctx.fillRect(x - s * .15, y - s * .85 - bob, s * .3, s * .06);
+  ctx.beginPath(); ctx.moveTo(x - s * .12, y - s * .89 - bob); ctx.lineTo(x + s * .12, y - s * .89 - bob); ctx.lineTo(x + s * .095, y - s * .81 - bob); ctx.lineTo(x - s * .095, y - s * .81 - bob); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x - s * .25, y); ctx.lineTo(x - s * .21, y - s * .58 - bob); ctx.lineTo(x + s * .21, y - s * .58 - bob); ctx.lineTo(x + s * .25, y); ctx.fill();
+  ctx.restore();
+}
+
+// ───────── 1 巡夜
+function patrolScene(t) {
+  const lt = t - S.patrol[0];
+  ctx.fillStyle = "#040404"; ctx.fillRect(-100, -100, W + 200, H + 200);
+  // 走路：前进 + 步伐起伏
+  const walk = lt < 40 ? lt : 40 + (lt - 40) * .25;
+  const bob = Math.sin(walk * 5.2) * 7 * (lt < 40 ? 1 : .3);
+  ctx.save(); ctx.translate(0, bob);
+  const vx = W / 2 + noise1(lt * .2) * 40, vy = 470;
+  // 走廊轮廓（非常暗）
+  ctx.strokeStyle = "rgba(90,80,65,.18)"; ctx.lineWidth = 2;
+  for (const [cx, cy] of [[-200, -200], [W + 200, -200], [W + 200, H + 200], [-200, H + 200]]) { ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(vx + (cx < 0 ? -90 : 90), vy + (cy < 0 ? -120 : 140)); ctx.stroke(); }
+  // 两侧的画：随前进从远处移近、掠过
+  const kinds = ["portrait", "portrait", "storm", "portrait", "concert", "portrait"];
+  for (let k = 0; k < 12; k++) {
+    const z = ((k * 2.6 - walk * .55) % 31.2 + 31.2) % 31.2;   // 距离
+    if (z < .6) continue;
+    const sc = 1 / z, side = k % 2 ? 1 : -1;
+    const x = vx + side * (180 + 1500 * sc) , y = vy - 40 - 900 * sc * .25, w = 520 * sc * 2.2, h = 640 * sc * 2.2;
+    const kind = kinds[k % 6];
+    // 手电光扫到哪亮哪
+    const beamX = W / 2 + Math.sin(lt * .55) * 520, beamY = 520 + Math.sin(lt * .31) * 120;
+    const d = Math.hypot(x - beamX, y - beamY);
+    const light = clamp(1 - d / 600) * clamp(2 / z);
+    painting(kind, x - w / 2, y - h / 2, w, h, light * .9, clamp(4 / z));
+  }
+  // 末段：停在荷兰厅的两幅画前
+  const stop = ramp(lt, 40, 44) * (1 - ramp(lt, 55, 59));
+  if (stop > 0) {
+    ctx.globalAlpha = stop;
+    const sway = Math.sin(lt * .4) * 40;
+    const bx = W / 2 - 160 + Math.sin((lt - 40) * .35) * 330;
+    painting("storm", 360 + sway * .2, 250, 520, 640, clamp(1 - Math.abs(bx - 620) / 520) * .95, stop);
+    painting("concert", 1060 + sway * .2, 330, 500, 560, clamp(1 - Math.abs(bx - 1310) / 520) * .95, stop);
+    torch(bx, 560, 520, stop);
+    ctx.globalAlpha = 1;
+  }
+  torch(W / 2 + Math.sin(lt * .55) * 520, 520 + Math.sin(lt * .31) * 120, 620, (1 - stop) * fade(lt, .5, 60, 1.5));
+  ctx.restore();
+}
+// ───────── 2 值班台、监控、门铃
+function monitor(x, y, w, h, t, feed, glow = 1) {
+  ctx.save(); ctx.fillStyle = "#0b0f0c"; ctx.fillRect(x - 18, y - 18, w + 36, h + 36);
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 18); ctx.clip();
+  ctx.fillStyle = `rgba(${40 * glow},${62 * glow},${50 * glow},1)`; ctx.fillRect(x, y, w, h);
+  feed(x, y, w, h);
+  ctx.fillStyle = "rgba(0,0,0,.28)"; for (let yy = y; yy < y + h; yy += 4) ctx.fillRect(x, yy, w, 2);
+  ctx.globalAlpha = .35; ctx.drawImage(GR[Math.floor(t * 30) % GR.length], x, y, w, h); ctx.globalAlpha = 1;
+  const band = y + ((t * 90) % (h + 200)) - 100, gb = ctx.createLinearGradient(0, band - 60, 0, band + 60);
+  gb.addColorStop(0, "rgba(160,220,180,0)"); gb.addColorStop(.5, "rgba(160,220,180,.08)"); gb.addColorStop(1, "rgba(160,220,180,0)");
+  ctx.fillStyle = gb; ctx.fillRect(x, band - 60, w, 120); ctx.restore();
+}
+const doorFeed = (t, show) => (x, y, w, h) => {
+  ctx.fillStyle = "rgba(20,30,24,1)"; ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = "rgba(150,190,165,.55)"; ctx.lineWidth = 4;
+  const dx = x + w * .3, dw = w * .4, dy = y + h * .12, dh = h * .86;
+  ctx.strokeRect(dx, dy, dw, dh); ctx.fillStyle = "rgba(110,150,128,.35)"; ctx.fillRect(dx + 12, dy + 14, dw - 24, dh * .45);
+  for (let k = 0; k < 2; k++) silhouette(dx + dw * (.35 + k * .32) + noise1(t * 2 + k) * 3, dy + dh * .98, dh * .62, show, 0, "rgba(8,12,10,.95)");
+  ctx.font = `28px ${MONO}`; ctx.fillStyle = "rgba(170,210,185,.8)"; ctx.textAlign = "left"; ctx.fillText("CAM 03  SIDE ENTR.", x + 24, y + 40);
+};
+const emptyFeed = k => (x, y, w, h) => {
+  ctx.strokeStyle = "rgba(140,180,155,.35)"; ctx.lineWidth = 3;
+  if (k === 0) { ctx.beginPath(); ctx.moveTo(x, y + h); ctx.lineTo(x + w * .45, y + h * .45); ctx.lineTo(x + w * .55, y + h * .45); ctx.lineTo(x + w, y + h); ctx.stroke(); ctx.strokeRect(x + w * .45, y + h * .25, w * .1, h * .2); }
+  if (k === 1) for (let i = 0; i < 3; i++) ctx.strokeRect(x + w * (.12 + i * .28), y + h * .25, w * .2, h * .3);
+  if (k === 2) { ctx.beginPath(); ctx.moveTo(x + w * .1, y + h * .8); ctx.lineTo(x + w * .9, y + h * .8); ctx.stroke(); ctx.strokeRect(x + w * .35, y + h * .3, w * .3, h * .5); }
+};
+function clockTxt(str, a) { ctx.save(); ctx.font = `120px ${MONO}`; ctx.textAlign = "right"; ctx.fillStyle = "#ff3b2f"; ctx.shadowColor = "#ff3b2f"; ctx.shadowBlur = 30; ctx.globalAlpha = a; ctx.fillText(str, 1760, 790); ctx.restore(); }
+function deskBase(t, zoom, show) {
+  ctx.fillStyle = "#050605"; ctx.fillRect(-100, -100, W + 200, H + 200);
+  const fx = 690, fy = 455;
+  ctx.save(); ctx.translate(fx, fy); ctx.scale(zoom, zoom); ctx.translate(-fx, -fy);
+  monitor(300, 170, 420, 280, t, emptyFeed(0), .7); monitor(800, 170, 420, 280, t, emptyFeed(1), .7);
+  monitor(470, 315, 440, 290, t, doorFeed(t, show), 1); monitor(1300, 170, 380, 260, t, emptyFeed(2), .6);
+  ctx.restore();
+  const gl = ctx.createRadialGradient(700, 760, 50, 700, 760, 700); gl.addColorStop(0, "rgba(60,95,75,.25)"); gl.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = gl; ctx.fillRect(0, 600, W, 480);
+  ctx.fillStyle = "#0a0b0a"; ctx.fillRect(-100, 830, W + 200, 400); ctx.fillStyle = "rgba(70,90,80,.25)"; ctx.fillRect(-100, 828, W + 200, 3);
+}
+function panicButton(x, y, r, a, blur = 0) {
+  if (a <= 0) return;
+  ctx.save(); if (blur) ctx.filter = `blur(${blur}px)`; ctx.globalAlpha = a; ctx.fillStyle = "#c8341f"; ctx.shadowColor = "#ff4a30"; ctx.shadowBlur = 30;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); ctx.restore();
+}
+function deskScene(t) {
+  const lt = t - S.desk[0];
+  const zoom = 1 + ramp(lt, 9, 11) * 1.15 * (1 - ramp(lt, 26, 28));
+  const show = ramp(lt, 9.3, 10.2);
+  deskBase(t, zoom, show);
+  // 时钟：01:20 → 01:24
+  const mins = lt < 3 ? "01:20" : lt < 5 ? "01:22" : "01:24";
+  clockTxt(Math.floor(t * 2) % 2 ? mins : mins.replace(":", " "), .9 * (1 - ramp(lt, 9, 10)) + .9 * ramp(lt, 26, 28));
+  panicButton(1520, 880, 34, .9);
+  // 手伸向开门按钮（另一个，偏左）
+  const reach = ramp(lt, 27, 29.5) * (1 - ramp(lt, 31.5, 33.5));
+  if (reach > 0) {
+    ctx.save(); ctx.fillStyle = "#3b6b4c"; ctx.shadowColor = "#6fd39a"; ctx.shadowBlur = 16 + 26 * (lt > 29.5 && lt < 30 ? 1 : 0);
+    ctx.beginPath(); ctx.arc(1180, 900, 26, 0, 7); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.fillStyle = "rgba(25,22,20,.97)"; const hx = lerp(1380, 1190, reach), hy = lerp(1160, 910, reach);
+    ctx.beginPath(); ctx.ellipse(hx + 40, hy + 30, 70, 46, -.5, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(hx + 40, hy + 40); ctx.lineTo(hx + 300, hy + 400); ctx.lineTo(hx + 460, hy + 330); ctx.lineTo(hx + 100, hy - 10); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(hx - 4, hy - 4, 26, 16, -.6, 0, 7); ctx.fill(); ctx.restore();
+  }
+}
+// ───────── 3 走廊：两人走近、停在面前
+function corridorScene(t) {
+  const lt = t - S.corridor[0], vx = W / 2 + noise1(t * .5) * 20, vy = 470;
+  ctx.fillStyle = "#070605"; ctx.fillRect(-100, -100, W + 200, H + 200);
+  const flick = (lt > .4 && lt < .55) || (lt > 1.9 && lt < 1.98) || (lt > 6.6 && lt < 6.7) || (lt > 14 && lt < 14.1) ? .25 : 1;
+  const door = ramp(lt, 0, .8), far = [vx - 120, vy - 170, 240, 330];
+  const gl = ctx.createRadialGradient(vx, vy, 10, vx, vy, 900); gl.addColorStop(0, `rgba(255,214,150,${.55 * door * flick})`); gl.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = gl; ctx.fillRect(-100, -100, W + 200, H + 200);
+  ctx.strokeStyle = `rgba(150,130,100,${.35 * flick})`; ctx.lineWidth = 3;
+  const corners = [[-200, -200], [W + 200, -200], [W + 200, H + 200], [-200, H + 200]], fc = [[far[0], far[1]], [far[0] + far[2], far[1]], [far[0] + far[2], far[1] + far[3]], [far[0], far[1] + far[3]]];
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(...corners[i]); ctx.lineTo(...fc[i]); ctx.stroke(); }
+  for (let k = 0; k < 4; k++) { const d = .25 + k * .17, x1 = lerp(-200, far[0], d), y1 = lerp(240, far[1] + 60, d), s = lerp(260, 60, d);
+    ctx.strokeStyle = `rgba(170,140,100,${.25 * flick})`; ctx.strokeRect(x1 + 20, y1, s * .7, s); ctx.strokeRect(W - x1 - 20 - s * .7, y1, s * .7, s); }
+  for (let k = 0; k < 5; k++) { const d = k / 5, y = lerp(-150, far[1], d), w = lerp(500, 60, d); ctx.fillStyle = `rgba(255,220,160,${(.12 + .1 * (1 - d)) * flick})`; ctx.fillRect(vx - w / 2, y, w, lerp(26, 4, d)); }
+  ctx.fillStyle = `rgba(255,226,170,${.9 * door * flick})`; ctx.fillRect(far[0] + far[2] * (.5 - .5 * door), far[1], far[2] * door, far[3]);
+  // 走近，然后停在面前（其中一人歪头“打量”）
+  const app = ramp(lt, .6, 6.5);
+  for (let k = 0; k < 2; k++) {
+    const s = lerp(170, 920, app), x = vx + (k ? 1 : -1) * lerp(40, 290, app) + noise1(t * 3 + k * 5) * 6 * app, y = lerp(vy + 160, H + 380, app);
+    const bob = app < 1 ? Math.abs(Math.sin(t * 5.5 + k)) * 8 * app : 0;
+    ctx.save(); if (k === 0 && lt > 8) { ctx.translate(x, y - s * .7); ctx.rotate(Math.sin((lt - 8) * .8) * .05); ctx.translate(-x, -(y - s * .7)); }
+    silhouette(x, y, s, 1, bob); ctx.restore();
+  }
+}
+// ───────── 4 离开桌子：报警按钮的红光越来越远
+function awayScene(t) {
+  const lt = t - S.away[0], back = ramp(lt, 1, 9);
+  deskBase(t, 1, 1);
+  // 整个桌面随后退缩小、偏移、虚焦
+  ctx.save(); ctx.fillStyle = `rgba(0,0,0,${.4 + .5 * back})`; ctx.fillRect(-100, -100, W + 200, H + 200); ctx.restore();
+  const bx = lerp(1520, 1240, back), by = lerp(880, 660, back), r = lerp(34, 9, back);
+  panicButton(bx, by, r, 1 - ramp(lt, 11, 15), lerp(0, 10, back));
+  // 两个人影在两侧挡住视线
+  silhouette(lerp(140, 380, back), H + 380, 1000, ramp(lt, 0, 2), 0);
+  silhouette(lerp(1780, 1560, back), H + 380, 1000, ramp(lt, 0, 2), 0);
+}
+// ───────── 5 面墙、手铐、对讲机
+function wallScene(t) {
+  const lt = t - S.wall[0], turn = ease(clamp(lt / 1.2));
+  ctx.fillStyle = "#060505"; ctx.fillRect(-100, -100, W + 200, H + 200);
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.rotate(lerp(0, -.12, turn) + noise1(t * 3) * .02); ctx.translate(-W / 2 + lerp(1400, 0, turn), -H / 2);
+  const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, "#151210"); g.addColorStop(.5, "#2a231c"); g.addColorStop(1, "#120f0d");
+  ctx.fillStyle = g; ctx.fillRect(-400, -200, W + 800, H + 400);
+  ctx.strokeStyle = "rgba(90,75,60,.25)"; ctx.lineWidth = 2; for (let y = -200; y < H + 200; y += 90) { ctx.beginPath(); ctx.moveTo(-400, y); ctx.lineTo(W + 400, y); ctx.stroke(); }
+  ctx.fillStyle = "rgba(0,0,0,.55)"; const sx = W / 2 + 260 + Math.sin(lt * .5) * 30, sy = H + 100;
+  ctx.beginPath(); ctx.ellipse(sx, sy - 760, 120, 140, 0, 0, 7); ctx.fill(); ctx.fillRect(sx - 190, sy - 930, 380, 70);
+  ctx.beginPath(); ctx.moveTo(sx - 330, sy); ctx.lineTo(sx - 260, sy - 620); ctx.lineTo(sx + 260, sy - 620); ctx.lineTo(sx + 330, sy); ctx.fill();
+  ctx.restore();
+  const click = clamp(1 - Math.abs(lt - 2.2) / .08);
+  if (click > 0) { ctx.fillStyle = `rgba(230,235,240,${.5 * click})`; ctx.fillRect(0, 0, W, H); ctx.fillStyle = `rgba(255,255,255,${click})`; ctx.fillRect(0, H / 2 - 3, W, 6); }
+  // 对讲机：屏幕左下一点绿灯闪
+  const radio = fade(lt, 10, 18, .4);
+  if (radio > 0 && Math.floor(t * 6) % 2) { ctx.save(); ctx.globalAlpha = radio; ctx.fillStyle = "#7dffb0"; ctx.shadowColor = "#7dffb0"; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(260, 900, 8, 0, 7); ctx.fill(); ctx.restore(); }
+}
+// ───────── 6 下楼梯
+function stairsScene(t) {
+  const lt = t - S.stairs[0], step = lt * 1.6, down = step - Math.floor(step);
+  ctx.fillStyle = "#030303"; ctx.fillRect(-100, -100, W + 200, H + 200);
+  const bob = (down < .5 ? down : 1 - down) * 30;
+  ctx.save(); ctx.translate(0, -bob);
+  // 台阶：往下延伸的横线
+  for (let k = 0; k < 14; k++) {
+    const z = k + (1 - down), sc = 1 / (z * .45 + .6), y = 560 + 520 * sc, w = 1500 * sc;
+    const a = clamp(1 - z / 12) * (1 - ramp(lt, 18, 24) * .7);
+    ctx.fillStyle = `rgba(80,70,58,${.35 * a})`; ctx.fillRect(W / 2 - w / 2, y, w, 4 * sc + 1);
+    ctx.fillStyle = `rgba(30,26,22,${.6 * a})`; ctx.fillRect(W / 2 - w / 2, y + 4 * sc, w, 50 * sc);
+  }
+  // 身后的手电光在台阶上晃
+  torch(W / 2 + Math.sin(lt * 1.3) * 160, 760 + Math.sin(lt * 2.1) * 40, 520, .55 * (1 - ramp(lt, 20, 25)));
+  ctx.restore();
+  // 墙边的管道，越往下越近
+  const p = ramp(lt, 12, 24);
+  ctx.strokeStyle = `rgba(110,95,75,${.4 * p})`; ctx.lineWidth = 22 * p + 2;
+  ctx.beginPath(); ctx.moveTo(lerp(1750, 1500, p), -50); ctx.lineTo(lerp(1750, 1500, p), H + 50); ctx.stroke();
+}
+// ───────── 7 胶带：灰色条带盖住视野
+function tapeScene(t) {
+  const lt = t - S.tape[0];
+  ctx.fillStyle = "#050504"; ctx.fillRect(-100, -100, W + 200, H + 200);
+  torch(W / 2, H / 2, 700, .25 * (1 - ramp(lt, 2, 6)));
+  for (let k = 0; k < 3; k++) {
+    const p = ramp(lt, 1 + k * 1.8, 2.4 + k * 1.8), y = [380, 540, 700][k] + noise1(k * 3) * 30, ang = [-.05, .04, -.02][k];
+    if (p <= 0) continue;
+    ctx.save(); ctx.translate(W / 2, y); ctx.rotate(ang); ctx.fillStyle = "rgba(95,95,92,.97)";
+    const w = W * 1.6 * p; ctx.fillRect(-W * .8, -170, w, 340);
+    ctx.fillStyle = "rgba(255,255,255,.04)"; for (let s = 0; s < 40; s++) ctx.fillRect(-W * .8 + s * 60, -170, 2, 340);
+    ctx.restore();
+  }
+  const black = ramp(lt, 7, 9.5); ctx.fillStyle = `rgba(0,0,0,${black})`; ctx.fillRect(0, 0, W, H);
+}
+// ───────── 8 黑暗里的 81 分钟：只能听，脑子里浮现楼上的画
+const LOSS = [   // [开始秒（相对 dark 段）, 种类, x, y, w, h]
+  [14, "storm", 190, 250, 340, 420], [24, "concert", 620, 300, 320, 340], [36, "portrait", 1030, 280, 240, 300],
+  [48, "portrait", 1360, 320, 180, 220], [58, "other", 1620, 330, 170, 150], [68, "portrait", 1640, 560, 130, 160],
+];
+function darkScene(t) {
+  const lt = t - S.dark[0];
+  ctx.fillStyle = "#000"; ctx.fillRect(-100, -100, W + 200, H + 200);
+  ctx.save(); ctx.filter = "blur(2px)";
+  for (const [t0, kind, x, y, w, h] of LOSS) {
+    const a = fade(lt, t0 - 2, 92, 2.5) * .75;
+    if (a <= 0) continue;
+    const gone = ramp(lt, t0 + 4, t0 + 7);
+    painting(kind === "other" ? "portrait" : kind, x, y, w, h, .55, a, gone);
+    // 一道浅色的线沿画框内沿“割”一圈
+    const cut = clamp((lt - (t0 + 2)) / 2.4);
+    if (cut > 0 && cut < 1.2) {
+      ctx.save(); ctx.globalAlpha = a * (1 - ramp(lt, t0 + 4.5, t0 + 6)); ctx.strokeStyle = "rgba(235,230,215,.9)"; ctx.lineWidth = 3;
+      const per = 2 * (w + h) * cut, pts = [[x + 6, y + 6], [x + w - 6, y + 6], [x + w - 6, y + h - 6], [x + 6, y + h - 6], [x + 6, y + 6]];
+      ctx.beginPath(); ctx.moveTo(...pts[0]); let acc = 0;
+      for (let i = 1; i < pts.length; i++) { const s = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); if (acc + s >= per) { const q = (per - acc) / s; ctx.lineTo(lerp(pts[i - 1][0], pts[i][0], q), lerp(pts[i - 1][1], pts[i][1], q)); break; } ctx.lineTo(...pts[i]); acc += s; }
+      ctx.stroke(); ctx.restore();
+    }
+    // 玻璃碎：几道白色裂纹一闪
+    const sh = clamp(1 - Math.abs(lt - (t0 + 1)) / .25);
+    if (sh > 0) { ctx.save(); ctx.globalAlpha = sh * a; ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 2;
+      for (let k = 0; k < 7; k++) { const an = k * .9 + t0; ctx.beginPath(); ctx.moveTo(x + w / 2, y + h / 2); ctx.lineTo(x + w / 2 + Math.cos(an) * w * .6, y + h / 2 + Math.sin(an) * h * .6); ctx.stroke(); } ctx.restore(); }
+  }
+  ctx.restore();
+  // 天花板方向：脚步经过时的一点点光（像楼板缝）
+  const f = Math.max(0, Math.sin(lt * 2.3) * .5 + noise1(lt * 1.7) * .5);
+  ctx.fillStyle = `rgba(255,200,140,${.03 * f})`; ctx.fillRect(0, 0, W, 60);
+}
+// ───────── 9 安静 / 10 漫长的几个小时：滴水、门缝下的晨光
+function quietScene(t) { ctx.fillStyle = "#000"; ctx.fillRect(-100, -100, W + 200, H + 200); }
+function hoursScene(t) {
+  const lt = t - S.hours[0];
+  ctx.fillStyle = "#000"; ctx.fillRect(-100, -100, W + 200, H + 200);
+  // 门缝：从无到有，由暖转冷（天亮）
+  const a = ramp(lt, 2, 30), gx = 1120, gy = 780, gw = 560;
+  const col = [lerp(255, 190, a), lerp(200, 215, a), lerp(130, 235, a)].map(Math.round);
+  const g = ctx.createLinearGradient(gx, 0, gx + gw, 0); g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(.5, `rgba(${col},${.8 * a})`); g.addColorStop(1, `rgba(${col},0)`);
+  ctx.fillStyle = g; ctx.fillRect(gx, gy, gw, 4);
+  const gg = ctx.createRadialGradient(gx + gw / 2, gy, 10, gx + gw / 2, gy, 320); gg.addColorStop(0, `rgba(${col},${.14 * a})`); gg.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = gg; ctx.fillRect(gx - 300, gy - 320, gw + 600, 640);
+  // 滴水：一颗微弱的亮点落下
+  const d = (lt * .9) % 1; ctx.fillStyle = `rgba(200,210,215,${.25 * (1 - d) * (.3 + a)})`; ctx.beginPath(); ctx.arc(520, lerp(300, 820, d * d), 3, 0, 7); ctx.fill();
+}
+// ───────── 11 早晨：胶带被撕开，强光，模糊的警察
+function morningScene(t) {
+  const lt = t - S.morning[0];
+  ctx.fillStyle = "#000"; ctx.fillRect(-100, -100, W + 200, H + 200);
+  const rip = ramp(lt, 7, 8.2), over = rip * (1 - ramp(lt, 9, 16) * .55);
+  if (rip > 0) {
+    ctx.save(); ctx.filter = `blur(${lerp(24, 6, ramp(lt, 8, 16))}px)`;
+    ctx.fillStyle = `rgba(${235},${238},${240},${over})`; ctx.fillRect(0, 0, W, H);
+    for (let k = 0; k < 2; k++) silhouette(W / 2 + (k ? 1 : -1) * 280, H + 360, 980, ramp(lt, 9, 12) * .8, 0, "rgba(40,48,60,.9)");
+    ctx.restore();
+  }
+  // 撕胶带的瞬间：一道横向的亮缝先出现
+  const slit = ramp(lt, 5.5, 7);
+  if (slit > 0 && rip < 1) { ctx.fillStyle = `rgba(255,255,255,${.8 * slit})`; ctx.fillRect(0, H / 2 - 4 - 200 * rip, W, 8 + 400 * rip); }
+}
+// ───────── 12 空画框
+function framesScene(t) {
+  const lt = t - S.frames[0];
+  // 沉静的墙面（暗绿锦缎感）
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#1a201b"); g.addColorStop(1, "#0d100e");
+  ctx.fillStyle = g; ctx.fillRect(-100, -100, W + 200, H + 200);
+  ctx.save(); const z = 1 + lt * .004; ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2);
+  ctx.strokeStyle = "rgba(255,255,255,.025)"; for (let x = 0; x < W; x += 24) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 40, H); ctx.stroke(); }
+  // 两个空框：里面只剩墙
+  const emptyFrame = (x, y, w, h) => { const fr = 46;
+    ctx.fillStyle = "#6e5626"; ctx.fillRect(x - fr, y - fr, w + fr * 2, h + fr * 2); ctx.fillStyle = "#3b2e15"; ctx.fillRect(x - 16, y - 16, w + 32, h + 32);
+    ctx.fillStyle = g; ctx.fillRect(x, y, w, h); ctx.strokeStyle = "rgba(255,255,255,.025)"; };
+  emptyFrame(380, 230, 520, 640); emptyFrame(1060, 300, 480, 540);
+  ctx.restore();
+  const lightA = .5 + .1 * Math.sin(lt * .3);
+  const lg = ctx.createRadialGradient(W / 2, 200, 50, W / 2, 400, 1100); lg.addColorStop(0, `rgba(255,230,190,${.18 * lightA})`); lg.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);
+}
+
+// ───────── 字（极少，中文）
+const LINES = [
+  [3, 8.5, "1990 年 3 月 18 日  ·  波士顿", 980, 30, SANS],
+  [76, 81.5, "“警察。我们接到报警，院子里有动静。”"],
+  [104, 107.2, "“你看着眼熟。”"],
+  [107.6, 111, "“我们这儿有一张你的逮捕令。”"],
+  [112.4, 116.5, "“出来，把证件拿出来。”"],
+  [146, 150.5, "“把你的同伴叫过来。”"],
+  [209, 215, "楼上，是你每晚巡视的那些画。"],
+  [288, 294, "81 分钟后，楼上安静了。"],
+  [366, 373, "13 件作品被带走，至今没有找回。"],
+  [374, 381, "空画框，至今挂在原处。"],
+  [383, 390, "伊莎贝拉·斯图尔特·加德纳博物馆  ·  波士顿", 980, 30, SANS],
+];
+const STAMPS = [[222, 226, "01:48"], [245, 249, "02:05"], [266, 270, "02:30"], [282, 286, "02:45"], [303, 307, "04:10"], [314, 318, "06:00"], [324, 328, "07:30"], [338, 343, "08:15"]];
+function line(str, t0, t1, y = 930, size = 44, font = SERIF, col = "rgba(225,225,220,.92)") {
+  const a = fade(T, t0, t1, .4); if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = a; ctx.font = `500 ${size}px ${font}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.letterSpacing = "6px";
+  ctx.fillStyle = col; ctx.shadowColor = "rgba(0,0,0,.9)"; ctx.shadowBlur = 16; ctx.fillText(str, W / 2, y); ctx.restore();
+}
+
+function draw(t) {
+  T = t;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.filter = "none"; ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+  const [sx, sy] = shake(t);
+  ctx.save(); ctx.translate(sx, sy);
+  const blur = inS(t, "wall") ? 1 + 4 * Math.sin(Math.PI * clamp((t - S.wall[0]) / 4)) : inS(t, "away") ? ramp(t, S.away[0] + 4, S.away[1]) * 2 : 0;
+  if (blur > 0) ctx.filter = `blur(${blur.toFixed(1)}px)`;
+  if (inS(t, "patrol")) patrolScene(t);
+  else if (inS(t, "desk")) deskScene(t);
+  else if (inS(t, "corridor")) corridorScene(t);
+  else if (inS(t, "away")) awayScene(t);
+  else if (inS(t, "wall")) wallScene(t);
+  else if (inS(t, "stairs")) stairsScene(t);
+  else if (inS(t, "tape")) tapeScene(t);
+  else if (inS(t, "dark")) darkScene(t);
+  else if (inS(t, "quiet")) quietScene(t);
+  else if (inS(t, "hours")) hoursScene(t);
+  else if (inS(t, "morning")) morningScene(t);
+  else framesScene(t);
+  ctx.restore(); ctx.filter = "none";
+  // 场景之间的短暗场 + 开门按钮按下的白闪
+  for (const k of Object.keys(S)) { const [a, b] = S[k]; const d = Math.min(Math.abs(t - a), Math.abs(t - b)); if (d < .35 && k !== "dark" && k !== "quiet") { ctx.fillStyle = `rgba(0,0,0,${1 - d / .35})`; ctx.fillRect(0, 0, W, H); } }
+  const flash = clamp(1 - Math.abs(t - (S.desk[0] + 29.6)) / .1) * .7;
+  if (flash > 0) { ctx.fillStyle = `rgba(255,245,230,${flash})`; ctx.fillRect(0, 0, W, H); }
+  // 心跳暗角
+  const p = pulse(t), tn = tension(t);
+  const inner = lerp(H * .62, H * .26, tn) * (1 - .12 * p), vg = ctx.createRadialGradient(W / 2, H / 2, inner, W / 2, H / 2, H * 1.05);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, `rgba(${Math.round(32 * p * tn)},0,0,.92)`);
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = .8; ctx.drawImage(GR[Math.floor(t * 24) % GR.length], 0, 0, W, H); ctx.globalAlpha = 1;
+  // 字
+  for (const [a, b, s, y, size, font] of LINES) line(s, a, b, y, size, font);
+  for (const [a, b, s] of STAMPS) { const al = fade(t, a, b, .5) * (.6 + .4 * (Math.floor(t * 3) % 2)); if (al <= 0) continue;
+    ctx.save(); ctx.globalAlpha = al * .8; ctx.font = `64px ${MONO}`; ctx.textAlign = "right"; ctx.fillStyle = s === "08:15" ? "#e8eef2" : "#ff3b2f"; ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 20; ctx.fillText(s, 1780, 140); ctx.restore(); }
+  // “唯一的报警按钮”：小红字，跟着按钮
+  const ab = fade(t, S.away[0] + 2.5, S.away[0] + 12, .6);
+  if (ab > 0) { const back = ramp(t - S.away[0], 1, 9); ctx.save(); ctx.globalAlpha = ab * .85; ctx.font = `400 28px ${SANS}`; ctx.textAlign = "left"; ctx.fillStyle = "#ff5a44"; ctx.letterSpacing = "4px";
+    ctx.fillText("唯一的报警按钮", lerp(1580, 1280, back), lerp(888, 668, back)); ctx.restore(); }
+  const fk = 1 - Math.min(clamp(t / 1), clamp((END - t) / 1.5));
+  if (fk > 0) { ctx.fillStyle = `rgba(0,0,0,${fk})`; ctx.fillRect(0, 0, W, H); }
+}
+window.draw = draw; window.END = END;
+window.events = () => ({ end: END, beats: BEATS, S, loss: LOSS.map(l => l[0] + S.dark[0]) });
+window.ready = document.fonts.ready.then(() => Promise.all([
+  document.fonts.load(`500 44px "Noto Serif SC"`, LINES.map(l => l[2]).join("")), document.fonts.load(`400 30px "Noto Sans SC"`, LINES.map(l => l[2]).join("") + "唯一的报警按钮"),
+  document.fonts.load(`120px "Share Tech Mono"`, "0123456789: CAMSIDENTR."),
+])).then(() => true);
+</script></body></html>

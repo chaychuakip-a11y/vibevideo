@@ -1,0 +1,232 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+</head><body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// 1990 年 3 月 18 日 凌晨 · 波士顿 · 值班保安的第一视角（14.5 秒样片）
+const W = 1920, H = 1080, END = 14.5;
+const ctx = document.getElementById("c").getContext("2d");
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const ease = p => { p = clamp(p); return p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const ramp = (t, a, b) => ease((t - a) / (b - a));
+const fade = (t, a, b, d = .4) => clamp(Math.min((t - a) / d, (b - t) / d));
+const SERIF = '"Noto Serif SC", serif', MONO = '"Share Tech Mono", monospace';
+// 可复现噪声
+const hash = n => { const x = Math.sin(n * 127.1) * 43758.5453; return x - Math.floor(x); };
+const noise1 = t => { const i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f); return lerp(hash(i), hash(i + 1), u) * 2 - 1; };
+
+// 心跳：随紧张程度加快；返回 0..1 的脉冲
+const BEATS = []; { let t = .3; while (t < END) { const bpm = t < 3 ? 62 : t < 6 ? 78 : t < 9 ? 104 : t < 11.5 ? 128 : 96; BEATS.push(t, t + .2); t += 60 / bpm; } }
+const pulse = t => Math.max(0, ...BEATS.map(b => { const d = t - b; return d >= 0 && d < .35 ? Math.exp(-d * 12) : 0; }));
+const tension = t => t < 3 ? .1 : t < 6 ? .3 : t < 9 ? .65 : t < 11.5 ? 1 : .5;
+
+// 镜头晃动（手持、呼吸）
+function shake(t) {
+  const k = .6 + tension(t) * 2.2;
+  return [noise1(t * .7) * 6 * k + noise1(t * 7) * 1.5 * k, noise1(t * .6 + 9) * 5 * k + Math.sin(t * 1.4) * 4];
+}
+function grainCanvas() {
+  const cv = document.createElement("canvas"); cv.width = 480; cv.height = 270;
+  const g = cv.getContext("2d"), im = g.createImageData(480, 270);
+  for (let i = 0; i < im.data.length; i += 4) { const v = Math.random() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 30; }
+  g.putImageData(im, 0, 0); return cv;
+}
+const GR = [...Array(8)].map(grainCanvas);
+
+// ───────── 场景 A / B：值班台、监控屏
+function monitor(x, y, w, h, t, feed, glow = 1) {
+  ctx.save();
+  ctx.fillStyle = "#0b0f0c"; ctx.fillRect(x - 18, y - 18, w + 36, h + 36);
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 18); ctx.clip();
+  ctx.fillStyle = `rgba(${40 * glow},${62 * glow},${50 * glow},1)`; ctx.fillRect(x, y, w, h);
+  feed(x, y, w, h);
+  // 扫描线 + 噪点 + 滚动亮带
+  ctx.fillStyle = "rgba(0,0,0,.28)"; for (let yy = y; yy < y + h; yy += 4) ctx.fillRect(x, yy, w, 2);
+  ctx.globalAlpha = .35; ctx.drawImage(GR[Math.floor(t * 30) % GR.length], x, y, w, h); ctx.globalAlpha = 1;
+  const band = y + ((t * 90) % (h + 200)) - 100;
+  const gb = ctx.createLinearGradient(0, band - 60, 0, band + 60); gb.addColorStop(0, "rgba(160,220,180,0)"); gb.addColorStop(.5, "rgba(160,220,180,.08)"); gb.addColorStop(1, "rgba(160,220,180,0)");
+  ctx.fillStyle = gb; ctx.fillRect(x, band - 60, w, 120);
+  ctx.restore();
+}
+// 监控画面：一扇侧门，门外两个戴警帽的人影
+function doorFeed(t, show) {
+  return (x, y, w, h) => {
+    ctx.fillStyle = "rgba(20,30,24,1)"; ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = "rgba(150,190,165,.55)"; ctx.lineWidth = 4;
+    const dx = x + w * .3, dw = w * .4, dy = y + h * .12, dh = h * .86;
+    ctx.strokeRect(dx, dy, dw, dh);
+    ctx.fillStyle = "rgba(110,150,128,.35)"; ctx.fillRect(dx + 12, dy + 14, dw - 24, dh * .45);   // 门上玻璃
+    for (let k = 0; k < 2; k++) {
+      const sx = dx + dw * (.35 + k * .32) + noise1(t * 2 + k) * 3, sy = dy + dh * .62, s = dh * .55;
+      ctx.save(); ctx.globalAlpha = show; ctx.fillStyle = "rgba(8,12,10,.95)";
+      ctx.beginPath(); ctx.ellipse(sx, sy - s * .7, s * .1, s * .12, 0, 0, 7); ctx.fill();          // 头
+      ctx.fillRect(sx - s * .16, sy - s * .84, s * .32, s * .07);                                     // 帽檐
+      ctx.beginPath(); ctx.moveTo(sx - s * .13, sy - s * .88); ctx.lineTo(sx + s * .13, sy - s * .88); ctx.lineTo(sx + s * .1, sy - s * .8); ctx.lineTo(sx - s * .1, sy - s * .8); ctx.fill();   // 帽顶
+      ctx.beginPath(); ctx.moveTo(sx - s * .22, sy + s * .4); ctx.lineTo(sx - s * .2, sy - s * .5); ctx.lineTo(sx + s * .2, sy - s * .5); ctx.lineTo(sx + s * .22, sy + s * .4); ctx.fill();
+      ctx.fillStyle = "rgba(170,200,180,.6)"; ctx.fillRect(sx - s * .12, sy - s * .38, s * .05, s * .05);   // 警徽一点反光
+      ctx.restore();
+    }
+    ctx.font = `28px ${MONO}`; ctx.fillStyle = "rgba(170,210,185,.8)"; ctx.textAlign = "left";
+    ctx.fillText("CAM 03  SIDE ENTR.", x + 24, y + 40);
+  };
+}
+const emptyFeed = k => (x, y, w, h) => {
+  ctx.strokeStyle = "rgba(140,180,155,.35)"; ctx.lineWidth = 3;
+  if (k === 0) { ctx.beginPath(); ctx.moveTo(x, y + h); ctx.lineTo(x + w * .45, y + h * .45); ctx.lineTo(x + w * .55, y + h * .45); ctx.lineTo(x + w, y + h); ctx.stroke(); ctx.strokeRect(x + w * .45, y + h * .25, w * .1, h * .2); }
+  if (k === 1) { for (let i = 0; i < 3; i++) ctx.strokeRect(x + w * (.12 + i * .28), y + h * .25, w * .2, h * .3); }
+  if (k === 2) { ctx.beginPath(); ctx.moveTo(x + w * .1, y + h * .8); ctx.lineTo(x + w * .9, y + h * .8); ctx.stroke(); ctx.strokeRect(x + w * .35, y + h * .3, w * .3, h * .5); }
+};
+function deskScene(t) {
+  // 暗房间，桌面边缘
+  ctx.fillStyle = "#050605"; ctx.fillRect(-100, -100, W + 200, H + 200);
+  const zoom = 1 + ramp(t, 2.6, 4.2) * 1.15;          // 推向 3 号画面
+  const fx = 690, fy = 455;
+  ctx.save(); ctx.translate(fx, fy); ctx.scale(zoom, zoom); ctx.translate(-fx, -fy);
+  // 监控墙：四个画面
+  const show = ramp(t, 2.9, 3.6);
+  const feeds = [emptyFeed(0), emptyFeed(1), doorFeed(t, show), emptyFeed(2)];
+  const pos = [[300, 170], [800, 170], [480, 300], [1080, 300]];
+  monitor(300, 170, 420, 280, t, feeds[0], .7); monitor(800, 170, 420, 280, t, feeds[1], .7);
+  monitor(470, 315, 440, 290, t, feeds[2], 1); monitor(1300, 170, 380, 260, t, feeds[3], .6);
+  ctx.restore();
+  // 屏幕在桌面上的反光
+  const gl = ctx.createRadialGradient(700, 760, 50, 700, 760, 700); gl.addColorStop(0, "rgba(60,95,75,.25)"); gl.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = gl; ctx.fillRect(0, 600, W, 480);
+  ctx.fillStyle = "#0a0b0a"; ctx.fillRect(-100, 830, W + 200, 400);
+  ctx.fillStyle = "rgba(70,90,80,.25)"; ctx.fillRect(-100, 828, W + 200, 3);
+  // 红色电子钟
+  ctx.save(); ctx.font = `120px ${MONO}`; ctx.textAlign = "right"; ctx.fillStyle = "#ff3b2f"; ctx.shadowColor = "#ff3b2f"; ctx.shadowBlur = 30;
+  ctx.globalAlpha = .9 * (1 - ramp(t, 2.6, 3.4)); ctx.fillText(t % 1 < .5 || t > 1.5 ? "01:24" : "01 24", 1760, 790); ctx.restore();
+  // 一只手伸向开门按钮
+  const reach = ramp(t, 4.6, 5.4) * (1 - ramp(t, 5.9, 6.3));
+  if (reach > 0) {
+    ctx.save(); ctx.fillStyle = "#c8341f"; ctx.shadowColor = "#ff4a30"; ctx.shadowBlur = 20 + 30 * (t > 5.45 && t < 5.7 ? 1 : 0);
+    ctx.beginPath(); ctx.arc(1520, 880, 34, 0, 7); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.fillStyle = "rgba(25,22,20,.97)";
+    const hx = lerp(1800, 1530, reach), hy = lerp(1150, 890, reach);
+    ctx.beginPath(); ctx.ellipse(hx + 40, hy + 30, 70, 46, -.5, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(hx + 40, hy + 40); ctx.lineTo(hx + 300, hy + 400); ctx.lineTo(hx + 460, hy + 330); ctx.lineTo(hx + 100, hy - 10); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(hx - 4, hy - 4, 26, 16, -.6, 0, 7); ctx.fill(); ctx.restore();
+  }
+}
+// ───────── 场景 C：走廊，两人走近
+function corridorScene(t) {
+  const lt = t - 6.0, vx = W / 2 + noise1(t * .5) * 20, vy = 470;
+  ctx.fillStyle = "#070605"; ctx.fillRect(-100, -100, W + 200, H + 200);
+  // 透视走廊：地面 / 墙 / 天花
+  const flick = (t > 6.4 && t < 6.55) || (t > 7.9 && t < 7.98) || (t > 8.6 && t < 8.7) ? .25 : 1;
+  const door = ramp(lt, 0, .8);
+  const far = [vx - 120, vy - 170, 240, 330];
+  // 远处门里的光
+  const gl = ctx.createRadialGradient(vx, vy, 10, vx, vy, 900);
+  gl.addColorStop(0, `rgba(255,214,150,${.55 * door * flick})`); gl.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = gl; ctx.fillRect(-100, -100, W + 200, H + 200);
+  ctx.strokeStyle = `rgba(150,130,100,${.35 * flick})`; ctx.lineWidth = 3;
+  const corners = [[-200, -200], [W + 200, -200], [W + 200, H + 200], [-200, H + 200]], fc = [[far[0], far[1]], [far[0] + far[2], far[1]], [far[0] + far[2], far[1] + far[3]], [far[0], far[1] + far[3]]];
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(...corners[i]); ctx.lineTo(...fc[i]); ctx.stroke(); }
+  // 墙上的画框（空的）
+  for (let k = 0; k < 4; k++) { const d = .25 + k * .17; const x1 = lerp(-200, far[0], d), y1 = lerp(240, far[1] + 60, d), s = lerp(260, 60, d);
+    ctx.strokeStyle = `rgba(170,140,100,${.25 * flick})`; ctx.strokeRect(x1 + 20, y1, s * .7, s); ctx.strokeRect(W - x1 - 20 - s * .7, y1, s * .7, s); }
+  // 天花灯
+  for (let k = 0; k < 5; k++) { const d = k / 5; const y = lerp(-150, far[1], d), w = lerp(500, 60, d);
+    ctx.fillStyle = `rgba(255,220,160,${(.12 + .1 * (1 - d)) * flick})`; ctx.fillRect(vx - w / 2, y, w, lerp(26, 4, d)); }
+  // 门：两扇向里打开
+  ctx.fillStyle = `rgba(255,226,170,${.9 * door * flick})`; ctx.fillRect(far[0] + far[2] * (.5 - .5 * door), far[1], far[2] * door, far[3]);
+  // 两个人影：从门口走近（尺寸随距离放大）
+  const app = ramp(lt, .6, 3.3);
+  for (let k = 0; k < 2; k++) {
+    const s = lerp(170, 920, app), x = vx + (k ? 1 : -1) * lerp(40, 290, app) + noise1(t * 3 + k * 5) * 6 * app, y = lerp(vy + 160, H + 380, app);
+    const bob = Math.abs(Math.sin(t * 5.5 + k)) * 8 * app;
+    ctx.save(); ctx.fillStyle = "rgba(4,4,5,.98)";
+    ctx.beginPath(); ctx.ellipse(x, y - s * .72 - bob, s * .09, s * .11, 0, 0, 7); ctx.fill();
+    ctx.fillRect(x - s * .15, y - s * .85 - bob, s * .3, s * .06);
+    ctx.beginPath(); ctx.moveTo(x - s * .12, y - s * .89 - bob); ctx.lineTo(x + s * .12, y - s * .89 - bob); ctx.lineTo(x + s * .095, y - s * .81 - bob); ctx.lineTo(x - s * .095, y - s * .81 - bob); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x - s * .25, y); ctx.lineTo(x - s * .21, y - s * .58 - bob); ctx.lineTo(x + s * .21, y - s * .58 - bob); ctx.lineTo(x + s * .25, y); ctx.fill();
+    ctx.restore();
+  }
+}
+// ───────── 场景 D：被转过去面对墙
+function wallScene(t) {
+  const lt = t - 9.2, turn = ease(clamp(lt / .9));
+  ctx.fillStyle = "#060505"; ctx.fillRect(-100, -100, W + 200, H + 200);
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.rotate(lerp(.0, -.12, turn) + noise1(t * 3) * .02); ctx.translate(-W / 2 + lerp(1400, 0, turn), -H / 2);
+  // 墙面纹理
+  const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, "#151210"); g.addColorStop(.5, "#2a231c"); g.addColorStop(1, "#120f0d");
+  ctx.fillStyle = g; ctx.fillRect(-400, -200, W + 800, H + 400);
+  ctx.strokeStyle = "rgba(90,75,60,.25)"; ctx.lineWidth = 2;
+  for (let y = -200; y < H + 200; y += 90) { ctx.beginPath(); ctx.moveTo(-400, y); ctx.lineTo(W + 400, y); ctx.stroke(); }
+  // 身后的人影投在墙上
+  ctx.fillStyle = "rgba(0,0,0,.55)";
+  const sx = W / 2 + 260, sy = H + 100;
+  ctx.beginPath(); ctx.ellipse(sx, sy - 760, 120, 140, 0, 0, 7); ctx.fill(); ctx.fillRect(sx - 190, sy - 930, 380, 70);
+  ctx.beginPath(); ctx.moveTo(sx - 330, sy); ctx.lineTo(sx - 260, sy - 620); ctx.lineTo(sx + 260, sy - 620); ctx.lineTo(sx + 330, sy); ctx.fill();
+  ctx.restore();
+  // 金属“咔”的一下：白闪 + 横向撕裂
+  const click = clamp(1 - Math.abs(t - 10.55) / .08);
+  if (click > 0) { ctx.fillStyle = `rgba(230,235,240,${.5 * click})`; ctx.fillRect(0, 0, W, H); ctx.fillStyle = `rgba(255,255,255,${click})`; ctx.fillRect(0, H / 2 - 3, W, 6); }
+}
+// ───────── 场景 E：黑暗、门缝下的一线光、楼上的脚步
+function darkScene(t) {
+  ctx.fillStyle = "#000"; ctx.fillRect(-100, -100, W + 200, H + 200);
+  const lt = t - 11.5;
+  // 门缝光：脚步经过时被遮挡
+  const steps = [12.1, 12.55, 13.0, 13.45];
+  let occl = 0; for (const s of steps) occl = Math.max(occl, clamp(1 - Math.abs(t - s) / .18));
+  const a = ramp(lt, .3, 1.2) * (1 - .8 * occl);
+  const gx = 1180, gy = 760, gw = 520;
+  const g = ctx.createLinearGradient(gx, 0, gx + gw, 0); g.addColorStop(0, "rgba(255,200,130,0)"); g.addColorStop(.5, `rgba(255,200,130,${.85 * a})`); g.addColorStop(1, "rgba(255,200,130,0)");
+  ctx.fillStyle = g; ctx.fillRect(gx, gy, gw, 4);
+  const gg = ctx.createRadialGradient(gx + gw / 2, gy, 10, gx + gw / 2, gy, 260); gg.addColorStop(0, `rgba(255,190,120,${.12 * a})`); gg.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = gg; ctx.fillRect(gx - 300, gy - 260, gw + 600, 520);
+}
+
+// ───────── 文字（极少）
+function line(str, t0, t1, y = 930, size = 44, col = "rgba(225,225,220,.92)", font = SERIF) {
+  const a = fade(T, t0, t1, .3); if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = a; ctx.font = `500 ${size}px ${font}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.letterSpacing = "6px";
+  ctx.fillStyle = col; ctx.shadowColor = "rgba(0,0,0,.9)"; ctx.shadowBlur = 16; ctx.fillText(str, W / 2, y); ctx.restore();
+}
+let T = 0;
+function draw(t) {
+  T = t;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.filter = "none";
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+  const [sx, sy] = shake(t);
+  ctx.save(); ctx.translate(sx, sy);
+  // 模糊：转身和黑暗里视线发糊
+  const blur = t > 9.2 && t < 11.6 ? 2 + 6 * Math.sin(Math.PI * clamp((t - 9.2) / 2.4)) : 0;
+  if (blur > 0) ctx.filter = `blur(${blur.toFixed(1)}px)`;
+  if (t < 6.0) deskScene(t);
+  else if (t < 9.2) corridorScene(t);
+  else if (t < 11.5) wallScene(t);
+  else darkScene(t);
+  ctx.restore(); ctx.filter = "none";
+  // 场景切换：开门按钮按下那一刻白闪
+  const flash = clamp(1 - Math.abs(t - 5.55) / .1) * .7 + clamp(1 - Math.abs(t - 6.0) / .12) * .5;
+  if (flash > 0) { ctx.fillStyle = `rgba(255,245,230,${flash})`; ctx.fillRect(0, 0, W, H); }
+  // 心跳暗角（紧张时更窄，且泛红）
+  const p = pulse(t), tn = tension(t);
+  const inner = lerp(H * .62, H * .28, tn) * (1 - .12 * p), outer = H * 1.05;
+  const vg = ctx.createRadialGradient(W / 2, H / 2, inner, W / 2, H / 2, outer);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, `rgba(${Math.round(30 * p * tn)},0,0,${.92})`);
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  // 颗粒
+  ctx.globalAlpha = .8; ctx.drawImage(GR[Math.floor(t * 24) % GR.length], 0, 0, W, H); ctx.globalAlpha = 1;
+  // 文字
+  line("1990 年 3 月 18 日  ·  波士顿", .5, 2.6, 980, 30, "rgba(200,200,195,.75)", '"Noto Sans SC", sans-serif');
+  line("“警察。我们接到报警。”", 3.9, 5.5);
+  line("“请从桌子后面出来。”", 7.4, 9.0);
+  line("81 分钟", 12.6, 14.6, H / 2 - 120, 64, "rgba(235,230,220,.9)");
+  // 开头 / 结尾淡入淡出
+  const fk = 1 - Math.min(clamp(t / .6), clamp((END - t) / .6));
+  if (fk > 0) { ctx.fillStyle = `rgba(0,0,0,${fk})`; ctx.fillRect(0, 0, W, H); }
+}
+window.draw = draw; window.END = END;
+window.events = () => ({ end: END, beats: BEATS });
+window.ready = document.fonts.ready.then(() => Promise.all([
+  document.fonts.load(`500 44px "Noto Serif SC"`, "“警察。我们接到报警。”“请从桌子后面出来。”81分钟"), document.fonts.load(`400 30px "Noto Sans SC"`, "1990年3月18日·波士顿"), document.fonts.load(`120px "Share Tech Mono"`, "01:24 CAMSIDENTR."),
+])).then(() => true);
+</script></body></html>
